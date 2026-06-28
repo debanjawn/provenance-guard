@@ -3,7 +3,12 @@ from uuid import uuid4
 
 from flask import Flask, jsonify, request
 
-from audit_log import get_log, write_submission_log
+from audit_log import (
+    find_submission_by_content_id,
+    get_log,
+    write_appeal_log,
+    write_submission_log,
+)
 from detectors.llm_signal import get_llm_signal
 from detectors.predictability_signal import get_predictability_signal
 from detectors.stylometric_signal import get_stylometric_signal
@@ -24,6 +29,31 @@ def health():
 @app.get("/log")
 def log():
     return jsonify({"entries": get_log()})
+
+
+@app.post("/appeal")
+def appeal():
+    payload = request.get_json(silent=True) or {}
+    content_id = payload.get("content_id")
+    creator_reasoning = payload.get("creator_reasoning")
+
+    if not content_id or not creator_reasoning:
+        return jsonify({
+            "error": "Both 'content_id' and 'creator_reasoning' are required."
+        }), 400
+
+    if find_submission_by_content_id(content_id) is None:
+        return jsonify({
+            "error": "Content not found."
+        }), 404
+
+    write_appeal_log(content_id, creator_reasoning)
+
+    return jsonify({
+        "content_id": content_id,
+        "status": "under_review",
+        "message": "Appeal received."
+    })
 
 
 @app.post("/submit")
