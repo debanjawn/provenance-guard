@@ -1,0 +1,16 @@
+# Secrets
+.env
+.env.local
+*.env
+
+# Python virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Logs / generated files
+audit_log.json
+*.log
