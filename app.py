@@ -17,6 +17,7 @@ from detectors.predictability_signal import get_predictability_signal
 from detectors.stylometric_signal import get_stylometric_signal
 from labels import generate_label
 from scoring import combine_scores
+from verification import verify_creator
 
 app = Flask(__name__)
 limiter = Limiter(
@@ -44,6 +45,20 @@ def log():
 def analytics():
     entries = get_log()
     return jsonify(get_analytics(entries))
+
+
+@app.post("/verify-creator")
+def verify_creator_route():
+    payload = request.get_json(silent=True) or {}
+    creator_id = payload.get("creator_id")
+    verification_method = payload.get("verification_method")
+
+    if not creator_id or not verification_method:
+        return jsonify({
+            "error": "Both 'creator_id' and 'verification_method' are required."
+        }), 400
+
+    return jsonify(verify_creator(creator_id, verification_method))
 
 
 @app.post("/appeal")
