@@ -1,6 +1,26 @@
+from uuid import uuid4
+
 from flask import Flask, jsonify, request
 
+from detectors.llm_signal import get_llm_signal
+
 app = Flask(__name__)
+
+
+def _get_attribution(score: float) -> str:
+    if score >= 0.80:
+        return "likely_ai"
+    if score >= 0.40:
+        return "uncertain"
+    return "likely_human"
+
+
+def _get_label(attribution: str) -> str:
+    if attribution == "likely_ai":
+        return "This text shows strong signs of AI generation based on the signal reviewed."
+    if attribution == "likely_human":
+        return "This text appears more consistent with human-written work based on the signal reviewed."
+    return "We are not confident enough to determine whether this text was written by a person or generated with AI."
 
 
 @app.get("/health")
@@ -22,16 +42,18 @@ def submit():
             "error": "Both 'creator_id' and 'text' are required."
         }), 400
 
+    llm_signal = get_llm_signal(text)
+    confidence = llm_signal["score"]
+    attribution = _get_attribution(confidence)
+
     return jsonify({
-        "content_id": "abc123",
-        "attribution": "uncertain",
-        "confidence": 0.62,
+        "content_id": uuid4().hex,
+        "attribution": attribution,
+        "confidence": confidence,
         "signal_scores": {
-            "llm": 0.70,
-            "stylometric": 0.55,
-            "predictability": 0.58
+            "llm": llm_signal["score"]
         },
-        "label": "We are not confident enough to determine whether this text was written by a person or generated with AI.",
+        "label": _get_label(attribution),
         "status": "classified"
     })
 
