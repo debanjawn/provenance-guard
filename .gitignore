@@ -13,4 +13,5 @@ __pycache__/
 
 # Logs / generated files
 audit_log.json
+verified_creators.json
 *.log

@@ -1,1 +1,815 @@
-# provenance-guard
+# Provenance Guard
+
+Provenance Guard is a Flask API that evaluates submitted writing using multiple provenance signals, combines those signals into a confidence score, returns a plain-English transparency label, supports creator appeals, and records decisions in a structured audit log.
+
+The project is designed around a writing-platform scenario where falsely labeling a human creator’s work as AI-generated is harmful. Because of that, the scoring and labels are intentionally conservative: middle-range scores become `uncertain` instead of forcing an accusation.
+
+---
+
+## Features
+
+### Required Features
+
+- `POST /submit` accepts creator text and returns structured JSON.
+- Three detection signals run on each text submission:
+  - LLM signal
+  - Stylometric signal
+  - Predictability signal
+- Confidence scoring combines all signal scores into one final score.
+- Transparency labels change based on the final attribution result.
+- `POST /appeal` lets a creator dispute a classification.
+- `GET /log` returns a structured audit log.
+- Flask-Limiter protects `POST /submit` from request flooding.
+
+### Stretch Features
+
+- Ensemble detection with three distinct signals.
+- `GET /analytics` dashboard metrics.
+- `POST /verify-creator` provenance certificate.
+- `POST /submit-metadata` structured metadata support for non-text content.
+
+---
+
+## Tech Stack
+
+- Python
+- Flask
+- Flask-Limiter
+- Groq API
+- python-dotenv
+- JSON file storage for local audit/provenance records
+
+---
+
+## Setup
+
+Clone the repo:
+
+```bash
+git clone https://github.com/debanjawn/provenance-guard.git
+cd provenance-guard
+```
+
+Create and activate a virtual environment.
+
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```powershell
+pip install -r requirements.txt
+```
+
+Create a real `.env` file in the repo root:
+
+```env
+GROQ_API_KEY=your_actual_groq_key_here
+```
+
+The repo includes `.env.example` as a safe template. Do not commit your real `.env`.
+
+Run the app:
+
+```powershell
+python app.py
+```
+
+The API runs locally at:
+
+```text
+http://127.0.0.1:5000
+```
+
+Health check:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/health
+```
+
+Expected response:
+
+```json
+{
+  "message": "Provenance Guard API is running",
+  "status": "ok"
+}
+```
+
+---
+
+## Architecture
+
+### Submission Flow
+
+```text
+POST /submit
+(raw JSON: creator_id, text)
+        ↓
+app.py validates input
+(validated creator_id + raw text)
+        ↓
+Generate content_id
+(content_id + creator_id + raw text)
+        ↓
+detectors/llm_signal.py
+(raw text → llm_score + llm_reason)
+        ↓
+detectors/stylometric_signal.py
+(raw text → stylometric_score + metrics)
+        ↓
+detectors/predictability_signal.py
+(raw text → predictability_score + metrics)
+        ↓
+scoring.py
+(llm_score + stylometric_score + predictability_score → combined confidence + attribution)
+        ↓
+labels.py
+(attribution + confidence → transparency label text)
+        ↓
+audit_log.py
+(content_id + creator_id + signal scores + confidence + attribution + label + status)
+        ↓
+JSON response
+(content_id + attribution + confidence + signal_scores + label + status)
+```
+
+### Appeal Flow
+
+```text
+POST /appeal
+(raw JSON: content_id, creator_reasoning)
+        ↓
+app.py validates appeal request
+(validated content_id + creator reasoning)
+        ↓
+Find original submission
+(original classification + confidence + status)
+        ↓
+Update status
+(status → under_review)
+        ↓
+audit_log.py
+(content_id + original classification + appeal reasoning + updated status)
+        ↓
+JSON response
+(content_id + status + confirmation message)
+```
+
+---
+
+## API Endpoints
+
+### `POST /submit`
+
+Submits text for provenance classification.
+
+Request:
+
+```json
+{
+  "creator_id": "test-user-1",
+  "text": "The sun dipped below the horizon, painting the sky in hues of amber and rose."
+}
+```
+
+Response example:
+
+```json
+{
+  "attribution": "likely_human",
+  "confidence": 0.3029,
+  "content_id": "0571a271a0c34139b25349fe10fba30b",
+  "label": "This text appears more consistent with human-written work based on the signals reviewed. This label is not a guarantee, but the system did not find strong signs of AI generation.",
+  "signal_scores": {
+    "llm": 0.3,
+    "predictability": 0.0521,
+    "stylometric": 0.5164
+  },
+  "status": "classified"
+}
+```
+
+---
+
+### `POST /appeal`
+
+Submits an appeal for a previous classification.
+
+Request:
+
+```json
+{
+  "content_id": "18c3ffe225dc4e7884dcf9cbc8e4494d",
+  "creator_reasoning": "I wrote this myself from personal experience. My writing style may appear more formal than typical."
+}
+```
+
+Response:
+
+```json
+{
+  "content_id": "18c3ffe225dc4e7884dcf9cbc8e4494d",
+  "message": "Appeal received.",
+  "status": "under_review"
+}
+```
+
+---
+
+### `GET /log`
+
+Returns structured audit log entries.
+
+Example appeal-related log entries:
+
+```json
+[
+  {
+    "attribution": "likely_ai",
+    "confidence": 0.8409,
+    "content_id": "18c3ffe225dc4e7884dcf9cbc8e4494d",
+    "creator_id": "label-test-ai-extreme",
+    "llm_score": 0.9,
+    "predictability_score": 0.9405,
+    "status": "classified",
+    "stylometric_score": 0.6693,
+    "timestamp": "2026-06-28T07:17:26.279155+00:00"
+  },
+  {
+    "appeal_reasoning": "I wrote this myself from personal experience. My writing style may appear more formal than typical.",
+    "content_id": "18c3ffe225dc4e7884dcf9cbc8e4494d",
+    "creator_id": "label-test-ai-extreme",
+    "original_attribution": "likely_ai",
+    "original_confidence": 0.8409,
+    "status": "under_review",
+    "timestamp": "2026-06-28T07:21:00.589534+00:00"
+  }
+]
+```
+
+---
+
+### `GET /analytics`
+
+Returns dashboard metrics from the audit log.
+
+Example response:
+
+```json
+{
+  "appeal_count": 1,
+  "appeal_rate": 0.0417,
+  "average_confidence": 0.5551,
+  "likely_ai_count": 1,
+  "likely_human_count": 6,
+  "total_submissions": 24,
+  "uncertain_count": 17
+}
+```
+
+---
+
+### `POST /verify-creator`
+
+Creates a provenance certificate for a creator.
+
+Request:
+
+```json
+{
+  "creator_id": "creator_verified_1",
+  "verification_method": "writing_sample_review"
+}
+```
+
+Response:
+
+```json
+{
+  "certificate_label": "Verified creator: this creator completed an additional provenance check. This does not guarantee authorship of a specific submission, but it provides extra context.",
+  "creator_id": "creator_verified_1",
+  "timestamp": "2026-06-28T07:32:34.389878+00:00",
+  "verification_method": "writing_sample_review",
+  "verified": true
+}
+```
+
+A verified creator is not automatically treated as human-written for every submission. This certificate is separate from the AI/human transparency label.
+
+---
+
+### `POST /submit-metadata`
+
+Processes structured metadata for non-text content.
+
+Human-process metadata example:
+
+```json
+{
+  "creator_id": "metadata-human",
+  "content_type": "image_metadata",
+  "metadata": {
+    "tool_used": "Photoshop",
+    "declared_ai_assistance": false,
+    "has_process_notes": true,
+    "edit_history_available": true,
+    "human_reviewed": true
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "content_id": "702964ac12984254baa3bbcc1ab84a21",
+  "content_type": "image_metadata",
+  "creator_id": "metadata-human",
+  "metadata_attribution": "likely_human_process",
+  "metadata_checks": {
+    "declared_ai_assistance": false,
+    "edit_history_available": true,
+    "has_process_notes": true,
+    "human_reviewed": true,
+    "tool_flagged_as_ai": false,
+    "tool_used": "Photoshop"
+  },
+  "provenance_score": 0.0,
+  "reason": "The metadata shows stronger signs of human process documentation than AI-assisted creation.",
+  "status": "classified"
+}
+```
+
+AI-assisted metadata example:
+
+```json
+{
+  "creator_id": "metadata-ai",
+  "content_type": "image_metadata",
+  "metadata": {
+    "tool_used": "Midjourney",
+    "declared_ai_assistance": true,
+    "has_process_notes": false,
+    "edit_history_available": false,
+    "human_reviewed": false
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "content_id": "34ac5265d3144cfa81b75612f439064f",
+  "content_type": "image_metadata",
+  "creator_id": "metadata-ai",
+  "metadata_attribution": "likely_ai_assisted",
+  "metadata_checks": {
+    "declared_ai_assistance": true,
+    "edit_history_available": false,
+    "has_process_notes": false,
+    "human_reviewed": false,
+    "tool_flagged_as_ai": true,
+    "tool_used": "Midjourney"
+  },
+  "provenance_score": 1.0,
+  "reason": "The metadata indicates stronger signs of AI-assisted creation than human-process evidence.",
+  "status": "classified"
+}
+```
+
+---
+
+## Detection Signals
+
+The system uses three distinct signals. Each signal returns a score from `0.0` to `1.0`, where higher means more AI-like.
+
+### 1. LLM Signal
+
+File:
+
+```text
+detectors/llm_signal.py
+```
+
+The LLM signal calls Groq and asks for a structured JSON assessment.
+
+It measures:
+
+- tone
+- flow
+- genericness
+- semantic coherence
+- polish
+- whether the writing feels natural or templated
+
+Why this signal exists:
+
+The LLM can make a broad, holistic judgment about the text. It can notice overall style and semantic patterns that simple metrics may miss.
+
+Blind spot:
+
+The LLM may over-score formal human writing, academic writing, or professionally edited writing. Because of that, the project does not allow the LLM signal to fully decide the final result by itself.
+
+---
+
+### 2. Stylometric Signal
+
+File:
+
+```text
+detectors/stylometric_signal.py
+```
+
+The stylometric signal measures structural writing statistics.
+
+It uses metrics such as:
+
+- sentence length variance
+- type-token ratio
+- punctuation density
+- repetition rate
+
+Why this signal exists:
+
+AI-generated writing can be smoother and more uniform. Human writing often has more variation in sentence length, punctuation, and word choice.
+
+Blind spot:
+
+Polished human writing, resumes, academic paragraphs, and some creative writing can also look uniform. This means stylometrics can misread genre or style as AI evidence.
+
+---
+
+### 3. Predictability Signal
+
+File:
+
+```text
+detectors/predictability_signal.py
+```
+
+The predictability signal estimates how formulaic the writing is.
+
+It looks for:
+
+- repeated phrases
+- common transitions
+- generic AI-style wording
+- formulaic phrases like “in conclusion,” “it is important to note,” and “plays a crucial role”
+
+Why this signal exists:
+
+AI-generated text often uses safe, common, high-probability phrasing. A predictability signal helps catch writing that is not just polished, but also templated.
+
+Blind spot:
+
+Predictable writing is not automatically AI-generated. Student essays, business memos, and formal explanations often use predictable phrasing because that is normal for the genre.
+
+---
+
+## Confidence Scoring
+
+The final confidence score is a weighted average:
+
+```text
+combined_score = (0.45 * llm_score) + (0.30 * stylometric_score) + (0.25 * predictability_score)
+```
+
+Weights:
+
+```text
+LLM signal:              45%
+Stylometric signal:      30%
+Predictability signal:   25%
+```
+
+I weighted the LLM signal highest because it gives the broadest judgment of tone and semantic style. The stylometric signal gets 30% because it provides measurable structural evidence. The predictability signal gets 25% because formulaic wording is useful evidence, but predictable writing alone is not proof of AI generation.
+
+Thresholds:
+
+```text
+0.00–0.39 = likely_human
+0.40–0.79 = uncertain
+0.80–1.00 = likely_ai
+```
+
+A confidence score of `0.6` means the system found mixed evidence. The text has some AI-like signals, but not enough evidence to label it as likely AI.
+
+The `likely_ai` threshold is intentionally high because a false positive is more harmful than a false negative in a writing platform. A human creator should not be accused of AI generation unless the combined evidence is strong.
+
+---
+
+## Scoring Examples
+
+### Lower-confidence / human-like case
+
+Input type: casual personal writing
+
+```json
+{
+  "attribution": "likely_human",
+  "confidence": 0.3029,
+  "signal_scores": {
+    "llm": 0.3,
+    "predictability": 0.0521,
+    "stylometric": 0.5164
+  }
+}
+```
+
+This scored low because the text had personal experience, casual phrasing, and low predictability. The stylometric score was moderate, but the LLM and predictability signals pulled the combined score down.
+
+---
+
+### Higher-confidence / AI-like case
+
+Input type: extremely formulaic AI-style writing
+
+```json
+{
+  "attribution": "likely_ai",
+  "confidence": 0.8409,
+  "signal_scores": {
+    "llm": 0.9,
+    "predictability": 0.9405,
+    "stylometric": 0.6693
+  }
+}
+```
+
+This scored high because multiple signals agreed: the LLM judged it AI-like, the predictability signal found repeated formulaic phrasing, and the stylometric signal was also elevated.
+
+---
+
+### Uncertain case
+
+Input type: polished but not extreme AI-like text
+
+```json
+{
+  "attribution": "uncertain",
+  "confidence": 0.7146,
+  "signal_scores": {
+    "llm": 0.8,
+    "predictability": 0.7506,
+    "stylometric": 0.5564
+  }
+}
+```
+
+This stayed uncertain because the score did not reach the high `0.80` threshold. This reflects the system’s conservative false-positive design.
+
+---
+
+## Transparency Labels
+
+The system returns one of three plain-English labels.
+
+### Likely Human
+
+```text
+This text appears more consistent with human-written work based on the signals reviewed. This label is not a guarantee, but the system did not find strong signs of AI generation.
+```
+
+### Uncertain
+
+```text
+We are not confident enough to determine whether this text was written by a person or generated with AI. This result should not be treated as a final judgment.
+```
+
+### Likely AI
+
+```text
+This text shows strong signs of AI generation based on multiple signals, but this is not a final judgment. The creator may appeal this label.
+```
+
+These labels avoid saying “this was written by AI” because the system is not proof of authorship.
+
+---
+
+## Appeals Workflow
+
+A creator can appeal any classification by submitting the original `content_id` and their reasoning.
+
+The system does not automatically reclassify the text. Instead, it:
+
+1. Finds the original submission.
+2. Records an appeal entry in the audit log.
+3. Marks the appeal status as `under_review`.
+4. Preserves the creator’s reasoning with the original classification.
+
+A human reviewer would be able to see:
+
+- original content ID
+- creator ID
+- original attribution
+- original confidence
+- individual signal scores
+- appeal reasoning
+- appeal status
+
+---
+
+## Rate Limiting
+
+The `/submit` endpoint is rate-limited with Flask-Limiter:
+
+```text
+10 per minute;50 per day
+```
+
+I chose `10 per minute` because a real writer may submit several drafts quickly while revising, but more than 10 submissions in a minute likely indicates automated abuse or flooding.
+
+I chose `50 per day` because it is enough for normal writing and revision workflows while limiting large-scale automated use of the API.
+
+Rate-limit test output:
+
+```text
+200
+200
+200
+200
+200
+200
+200
+200
+200
+200
+429
+429
+```
+
+The first 10 rapid `POST /submit` requests succeeded. The 11th and 12th returned `429`, confirming the 10-per-minute limit works.
+
+---
+
+## Audit Log
+
+The audit log is structured JSON, not console output.
+
+Submission entries include:
+
+- timestamp
+- content ID
+- creator ID
+- attribution result
+- confidence score
+- LLM score
+- stylometric score
+- predictability score
+- status
+
+Appeal entries include:
+
+- timestamp
+- content ID
+- creator ID
+- original attribution
+- original confidence
+- appeal reasoning
+- status: `under_review`
+
+The log can be viewed with:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/log
+```
+
+---
+
+## Stretch Goals
+
+### Ensemble Detection
+
+Implemented.
+
+The system uses three distinct detection signals and combines them with documented weights.
+
+### Analytics Dashboard
+
+Implemented with:
+
+```text
+GET /analytics
+```
+
+It returns detection counts, appeal rate, and average confidence.
+
+### Provenance Certificate
+
+Implemented with:
+
+```text
+POST /verify-creator
+```
+
+This creates a verified creator certificate label that is separate from the normal transparency label.
+
+### Multi-Modal Support
+
+Implemented with:
+
+```text
+POST /submit-metadata
+```
+
+This supports non-text structured metadata such as declared AI assistance, tool used, process notes, edit history, and human review status.
+
+---
+
+## Known Limitations
+
+This system is a prototype and should not be treated as a reliable AI detector.
+
+Specific limitations:
+
+1. **Formal human writing may be over-scored.**  
+   Academic essays, business memos, and resumes can be polished and predictable, which may raise the stylometric and predictability scores even when the writing is human.
+
+2. **Creative repetition can be misread.**  
+   A poem or stylistic piece that repeats simple phrases may look formulaic to the predictability signal even if the repetition is intentional.
+
+3. **Very short text has weak evidence.**  
+   One or two sentences may not provide enough information for stylometric or predictability metrics to be meaningful.
+
+4. **Edited AI text may become uncertain.**  
+   If a person heavily edits AI-generated text, the human variation may lower the score and move the result into the uncertain range.
+
+5. **The LLM signal is not proof.**  
+   Groq provides a judgment, not ground truth. That is why the system uses multiple signals and conservative thresholds.
+
+If this were deployed for real users, I would add stronger calibration, human review tools, authenticated audit access, larger validation sets, and clearer creator-facing explanations.
+
+---
+
+## Spec Reflection
+
+The planning spec helped guide the implementation because it defined the expected API shapes, signal outputs, scoring formula, thresholds, and label text before coding started. This made it easier to check whether each generated module matched the intended contract.
+
+One way the implementation diverged from the original plan was that the first version of the predictability signal under-scored very formulaic AI-style text. The system could reach `likely_human` and `uncertain`, but not `likely_ai` through `/submit`. I revised the predictability signal so repeated formulaic phrases had a stronger effect, which made all three transparency labels reachable while still keeping casual human writing low.
+
+---
+
+## AI Tool Usage
+
+I used AI tools as implementation support, not as a replacement for my own design decisions.
+
+### Instance 1: Flask route and first signal
+
+I prompted Codex with my `planning.md` architecture and asked it to create a small Flask skeleton with `POST /submit` and a first LLM signal function. It produced `app.py` and `detectors/llm_signal.py`.
+
+I reviewed the output and verified that:
+
+- `/submit` accepted `creator_id` and `text`
+- the response matched my API contract
+- `get_llm_signal(text: str)` returned a dictionary with `score` and `reason`
+
+I revised the LLM prompt because the first version over-scored casual human writing as AI-like. After revision, casual personal writing scored lower and matched the false-positive design better.
+
+### Instance 2: Multi-signal scoring
+
+I prompted Codex to generate `stylometric_signal.py`, `predictability_signal.py`, and `scoring.py` from my detection signals and uncertainty representation sections.
+
+I verified that:
+
+- each signal returned a `0.0–1.0` score
+- `scoring.py` used the exact `45/30/25` weights from `planning.md`
+- thresholds matched my planned ranges
+- different inputs produced different confidence scores
+
+I later revised the predictability signal because it was too weak for formulaic AI-style writing.
+
+### Instance 3: Production features
+
+I prompted Codex to add production-layer features one at a time: labels, appeals, rate limiting, analytics, creator verification, and metadata support.
+
+I checked each feature manually by running the API locally and testing the endpoint responses. I did not accept the generated code blindly; I tested each endpoint before committing.
+
+---
+
+## Files
+
+```text
+app.py
+detectors/
+  __init__.py
+  llm_signal.py
+  stylometric_signal.py
+  predictability_signal.py
+scoring.py
+labels.py
+audit_log.py
+analytics.py
+verification.py
+metadata_signal.py
+planning.md
+requirements.txt
+.env.example
+.gitignore
+README.md
+```
