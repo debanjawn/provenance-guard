@@ -16,6 +16,7 @@ from detectors.llm_signal import get_llm_signal
 from detectors.predictability_signal import get_predictability_signal
 from detectors.stylometric_signal import get_stylometric_signal
 from labels import generate_label
+from metadata_signal import analyze_metadata
 from scoring import combine_scores
 from verification import verify_creator
 
@@ -131,6 +132,33 @@ def submit():
         "signal_scores": combined_result["signal_scores"],
         "label": generate_label(attribution, confidence),
         "status": status
+    })
+
+
+@app.post("/submit-metadata")
+def submit_metadata():
+    payload = request.get_json(silent=True) or {}
+    creator_id = payload.get("creator_id")
+    content_type = payload.get("content_type")
+    metadata = payload.get("metadata")
+
+    if not creator_id or not content_type or metadata is None:
+        return jsonify({
+            "error": "Fields 'creator_id', 'content_type', and 'metadata' are required."
+        }), 400
+
+    metadata_result = analyze_metadata(metadata)
+    content_id = uuid4().hex
+
+    return jsonify({
+        "content_id": content_id,
+        "creator_id": creator_id,
+        "content_type": content_type,
+        "provenance_score": metadata_result["provenance_score"],
+        "metadata_attribution": metadata_result["metadata_attribution"],
+        "reason": metadata_result["reason"],
+        "metadata_checks": metadata_result["metadata_checks"],
+        "status": "classified",
     })
 
 
