@@ -1,7 +1,9 @@
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from flask import Flask, jsonify, request
 
+from audit_log import write_submission_log
 from detectors.llm_signal import get_llm_signal
 
 app = Flask(__name__)
@@ -45,16 +47,28 @@ def submit():
     llm_signal = get_llm_signal(text)
     confidence = llm_signal["score"]
     attribution = _get_attribution(confidence)
+    content_id = uuid4().hex
+    status = "classified"
+
+    write_submission_log({
+        "content_id": content_id,
+        "creator_id": creator_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "attribution": attribution,
+        "confidence": confidence,
+        "llm_score": llm_signal["score"],
+        "status": status,
+    })
 
     return jsonify({
-        "content_id": uuid4().hex,
+        "content_id": content_id,
         "attribution": attribution,
         "confidence": confidence,
         "signal_scores": {
             "llm": llm_signal["score"]
         },
         "label": _get_label(attribution),
-        "status": "classified"
+        "status": status
     })
 
 
