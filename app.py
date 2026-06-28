@@ -7,17 +7,10 @@ from audit_log import get_log, write_submission_log
 from detectors.llm_signal import get_llm_signal
 from detectors.predictability_signal import get_predictability_signal
 from detectors.stylometric_signal import get_stylometric_signal
+from labels import generate_label
 from scoring import combine_scores
 
 app = Flask(__name__)
-
-
-def _get_label(attribution: str) -> str:
-    if attribution == "likely_ai":
-        return "This text shows strong signs of AI generation based on the signal reviewed."
-    if attribution == "likely_human":
-        return "This text appears more consistent with human-written work based on the signal reviewed."
-    return "We are not confident enough to determine whether this text was written by a person or generated with AI."
 
 
 @app.get("/health")
@@ -75,7 +68,7 @@ def submit():
         "attribution": attribution,
         "confidence": confidence,
         "signal_scores": combined_result["signal_scores"],
-        "label": _get_label(attribution),
+        "label": generate_label(attribution, confidence),
         "status": status
     })
 
