@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
+from analytics import get_analytics
 from audit_log import (
     find_submission_by_content_id,
     get_log,
@@ -37,6 +38,12 @@ def health():
 @app.get("/log")
 def log():
     return jsonify({"entries": get_log()})
+
+
+@app.get("/analytics")
+def analytics():
+    entries = get_log()
+    return jsonify(get_analytics(entries))
 
 
 @app.post("/appeal")
