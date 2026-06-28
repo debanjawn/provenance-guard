@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from flask import Flask, jsonify, request
 
-from audit_log import write_submission_log
+from audit_log import get_log, write_submission_log
 from detectors.llm_signal import get_llm_signal
 
 app = Flask(__name__)
@@ -31,6 +31,11 @@ def health():
         "status": "ok",
         "message": "Provenance Guard API is running"
     })
+
+
+@app.get("/log")
+def log():
+    return jsonify({"entries": get_log()})
 
 
 @app.post("/submit")
