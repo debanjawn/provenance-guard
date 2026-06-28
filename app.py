@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from flask import Flask, jsonify, request
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from audit_log import (
     find_submission_by_content_id,
@@ -16,6 +18,12 @@ from labels import generate_label
 from scoring import combine_scores
 
 app = Flask(__name__)
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri="memory://",
+    default_limits=[],
+)
 
 
 @app.get("/health")
@@ -57,6 +65,7 @@ def appeal():
 
 
 @app.post("/submit")
+@limiter.limit("10 per minute;50 per day")
 def submit():
     payload = request.get_json(silent=True) or {}
     creator_id = payload.get("creator_id")
