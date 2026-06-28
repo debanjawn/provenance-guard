@@ -4,6 +4,8 @@ Provenance Guard is a Flask API that evaluates submitted writing using multiple 
 
 The project is designed around a writing-platform scenario where falsely labeling a human creator’s work as AI-generated is harmful. Because of that, the scoring and labels are intentionally conservative: middle-range scores become `uncertain` instead of forcing an accusation.
 
+The project also includes a lightweight demo frontend so the system can be tested from a browser instead of only through command-line API requests.
+
 ---
 
 ## Features
@@ -27,6 +29,7 @@ The project is designed around a writing-platform scenario where falsely labelin
 - `GET /analytics` dashboard metrics.
 - `POST /verify-creator` provenance certificate.
 - `POST /submit-metadata` structured metadata support for non-text content.
+- Demo frontend served at `GET /` for easier testing and walkthroughs.
 
 ---
 
@@ -37,6 +40,7 @@ The project is designed around a writing-platform scenario where falsely labelin
 - Flask-Limiter
 - Groq API
 - python-dotenv
+- HTML/CSS/JavaScript frontend
 - JSON file storage for local audit/provenance records
 
 ---
@@ -84,6 +88,14 @@ The API runs locally at:
 ```text
 http://127.0.0.1:5000
 ```
+
+The demo frontend runs at:
+
+```text
+http://127.0.0.1:5000/
+```
+
+The frontend provides forms for text submission, appeals, audit log viewing, analytics, creator verification, and structured metadata submission. It is meant as a lightweight demo interface on top of the API, not as a production UI.
 
 Health check:
 
@@ -162,7 +174,61 @@ JSON response
 
 ---
 
+## Demo Frontend
+
+The project includes a dependency-free frontend served by Flask at:
+
+```text
+GET /
+```
+
+The frontend makes the project easier to demo without manually typing every request in PowerShell or curl.
+
+It supports:
+
+- submitting text to `POST /submit`
+- viewing attribution, confidence, labels, and individual signal scores
+- submitting appeals to `POST /appeal`
+- fetching the audit log from `GET /log`
+- fetching analytics from `GET /analytics`
+- verifying a creator through `POST /verify-creator`
+- submitting structured metadata through `POST /submit-metadata`
+
+The frontend uses plain HTML, CSS, and JavaScript:
+
+```text
+templates/index.html
+static/style.css
+static/script.js
+```
+
+It does not change the backend API behavior. It only calls the existing endpoints and displays the results in a readable interface.
+
+---
+
 ## API Endpoints
+
+### `GET /`
+
+Serves the browser demo frontend.
+
+Open:
+
+```text
+http://127.0.0.1:5000/
+```
+
+Use this page to test the main features visually:
+
+- text submission
+- transparency label output
+- appeal submission
+- audit log viewing
+- analytics
+- creator verification
+- metadata provenance checks
+
+---
 
 ### `POST /submit`
 
@@ -720,6 +786,16 @@ POST /submit-metadata
 
 This supports non-text structured metadata such as declared AI assistance, tool used, process notes, edit history, and human review status.
 
+### Demo Frontend
+
+Implemented with:
+
+```text
+GET /
+```
+
+The frontend provides a simple browser interface for the main system features. It helps demonstrate the project by letting a user submit text, view labels and scores, submit appeals, inspect the audit log, view analytics, verify creators, and test structured metadata without manually writing API requests.
+
 ---
 
 ## Known Limitations
@@ -753,6 +829,8 @@ The planning spec helped guide the implementation because it defined the expecte
 
 One way the implementation diverged from the original plan was that the first version of the predictability signal under-scored very formulaic AI-style text. The system could reach `likely_human` and `uncertain`, but not `likely_ai` through `/submit`. I revised the predictability signal so repeated formulaic phrases had a stronger effect, which made all three transparency labels reachable while still keeping casual human writing low.
 
+A second small change was adding a lightweight demo frontend after the backend was already complete. This did not change the API design, but it made the system easier to demonstrate and inspect during a walkthrough.
+
 ---
 
 ## AI Tool Usage
@@ -784,11 +862,11 @@ I verified that:
 
 I later revised the predictability signal because it was too weak for formulaic AI-style writing.
 
-### Instance 3: Production features
+### Instance 3: Production features and frontend
 
-I prompted Codex to add production-layer features one at a time: labels, appeals, rate limiting, analytics, creator verification, and metadata support.
+I prompted Codex to add production-layer features one at a time: labels, appeals, rate limiting, analytics, creator verification, metadata support, and a simple demo frontend.
 
-I checked each feature manually by running the API locally and testing the endpoint responses. I did not accept the generated code blindly; I tested each endpoint before committing.
+I checked each feature manually by running the API locally and testing the endpoint responses. For the frontend, I tested the browser forms and revised the result display formatting so key/value outputs were readable. I did not accept the generated code blindly; I tested each endpoint and UI section before committing.
 
 ---
 
@@ -801,6 +879,11 @@ detectors/
   llm_signal.py
   stylometric_signal.py
   predictability_signal.py
+templates/
+  index.html
+static/
+  style.css
+  script.js
 scoring.py
 labels.py
 audit_log.py

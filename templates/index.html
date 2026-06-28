@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Provenance Guard Demo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Provenance Guard</p>
+      <h1>Creator provenance demo dashboard</h1>
+      <p class="intro">
+        Test the existing Flask API from one page: submit text, appeal decisions,
+        review logs and analytics, verify creators, and inspect structured metadata.
+      </p>
+    </header>
+
+    <section class="grid">
+      <article class="card">
+        <h2>Text Submission</h2>
+        <form id="submit-form" class="stack">
+          <label>
+            Creator ID
+            <input type="text" name="creator_id" placeholder="creator_123" required>
+          </label>
+          <label>
+            Text
+            <textarea name="text" rows="8" placeholder="Paste text to classify..." required></textarea>
+          </label>
+          <button type="submit">Submit Text</button>
+        </form>
+        <div id="submit-result" class="result"></div>
+      </article>
+
+      <article class="card">
+        <h2>Appeal</h2>
+        <form id="appeal-form" class="stack">
+          <label>
+            Content ID
+            <input type="text" name="content_id" placeholder="Paste a content_id" required>
+          </label>
+          <label>
+            Creator Reasoning
+            <textarea name="creator_reasoning" rows="5" placeholder="Explain the appeal..." required></textarea>
+          </label>
+          <button type="submit">Submit Appeal</button>
+        </form>
+        <div id="appeal-result" class="result"></div>
+      </article>
+
+      <article class="card">
+        <h2>Verification</h2>
+        <form id="verify-form" class="stack">
+          <label>
+            Creator ID
+            <input type="text" name="creator_id" placeholder="creator_123" required>
+          </label>
+          <label>
+            Verification Method
+            <input type="text" name="verification_method" placeholder="manual review" required>
+          </label>
+          <button type="submit">Verify Creator</button>
+        </form>
+        <div id="verify-result" class="result"></div>
+      </article>
+
+      <article class="card wide">
+        <h2>Metadata Submission</h2>
+        <form id="metadata-form" class="stack">
+          <div class="two-up">
+            <label>
+              Creator ID
+              <input type="text" name="creator_id" placeholder="creator_123" required>
+            </label>
+            <label>
+              Content Type
+              <input type="text" name="content_type" placeholder="image" required>
+            </label>
+          </div>
+          <label>
+            Tool Used
+            <input type="text" name="tool_used" placeholder="ChatGPT, Midjourney, Firefly, etc.">
+          </label>
+          <div class="checks">
+            <label><input type="checkbox" name="declared_ai_assistance"> Declared AI assistance</label>
+            <label><input type="checkbox" name="has_process_notes"> Has process notes</label>
+            <label><input type="checkbox" name="edit_history_available"> Edit history available</label>
+            <label><input type="checkbox" name="human_reviewed"> Human reviewed</label>
+          </div>
+          <button type="submit">Submit Metadata</button>
+        </form>
+        <div id="metadata-result" class="result"></div>
+      </article>
+    </section>
+
+    <section class="grid grid-secondary">
+      <article class="card">
+        <div class="card-head">
+          <h2>Audit Log</h2>
+          <button id="load-log" type="button">Fetch Log</button>
+        </div>
+        <div id="log-result" class="result preformatted"></div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>Analytics</h2>
+          <button id="load-analytics" type="button">Fetch Analytics</button>
+        </div>
+        <div id="analytics-result" class="result"></div>
+      </article>
+    </section>
+  </main>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
