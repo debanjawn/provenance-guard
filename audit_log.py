@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 
 
@@ -24,7 +25,7 @@ ENTRY_COLUMNS = (
 
 
 def init_db() -> None:
-    with sqlite3.connect(DB_PATH) as connection:
+    with sqlite3.connect(_get_db_path()) as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS audit_entries (
@@ -50,9 +51,16 @@ def init_db() -> None:
 
 
 def _get_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH)
+    connection = sqlite3.connect(_get_db_path())
     connection.row_factory = sqlite3.Row
     return connection
+
+
+def _get_db_path() -> Path:
+    override_path = os.getenv("PROVENANCE_GUARD_DB_PATH")
+    if override_path:
+        return Path(override_path)
+    return DB_PATH
 
 
 def _row_to_entry(row: sqlite3.Row) -> dict:
@@ -150,6 +158,10 @@ def write_submission_log(entry: dict) -> None:
             tuple(payload[column] for column in ENTRY_COLUMNS),
         )
         connection.commit()
+
+
+def write_log_entry(entry: dict) -> None:
+    write_submission_log(entry)
 
 
 def write_appeal_log(content_id: str, appeal_reasoning: str) -> dict | None:
