@@ -9,6 +9,7 @@ from analytics import get_analytics
 from audit_log import (
     find_submission_by_content_id,
     get_log,
+    init_db,
     write_appeal_log,
     write_submission_log,
 )
@@ -21,6 +22,7 @@ from scoring import combine_scores
 from verification import verify_creator
 
 app = Flask(__name__)
+init_db()
 limiter = Limiter(
     key_func=get_remote_address,
     app=app,

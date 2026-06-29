@@ -41,7 +41,7 @@ The project also includes a lightweight demo frontend so the system can be teste
 - Groq API
 - python-dotenv
 - HTML/CSS/JavaScript frontend
-- JSON file storage for local audit/provenance records
+- SQLite persistence via Python's built-in `sqlite3`
 
 ---
 
@@ -76,6 +76,8 @@ GROQ_API_KEY=your_actual_groq_key_here
 ```
 
 The repo includes `.env.example` as a safe template. Do not commit your real `.env`.
+
+Local audit entries are stored in `provenance_guard.db`, which is created automatically when the app starts. The project originally used `audit_log.json` for prototype storage, but SQLite is used now to avoid lost audit entries under concurrent writes.
 
 Run the app:
 
@@ -716,7 +718,7 @@ The first 10 rapid `POST /submit` requests succeeded. The 11th and 12th returned
 
 ## Audit Log
 
-The audit log is structured JSON, not console output.
+The audit log is stored in a local SQLite database and returned through the API as structured JSON.
 
 Submission entries include:
 

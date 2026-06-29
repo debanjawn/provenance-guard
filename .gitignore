@@ -15,3 +15,10 @@ __pycache__/
 audit_log.json
 verified_creators.json
 *.log
+provenance_guard.db
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
