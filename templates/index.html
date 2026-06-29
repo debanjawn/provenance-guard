@@ -17,6 +17,26 @@
       </p>
     </header>
 
+    <section class="card provider-card">
+      <h2>AI Provider for LLM-backed actions</h2>
+      <p class="provider-note">
+        Currently used by text classification. Future LLM-backed features can reuse this setting.
+      </p>
+      <div class="provider-controls">
+        <label>
+          Provider Selection
+          <select id="llm-provider-select" name="llm_provider">
+            <option value="default">Default from .env</option>
+            <option value="groq">Groq cloud</option>
+            <option value="ollama">Local Ollama/Qwen</option>
+          </select>
+        </label>
+        <p id="llm-provider-default" class="provider-default">
+          Default provider from .env: Loading...
+        </p>
+      </div>
+    </section>
+
     <section class="grid">
       <article class="card">
         <h2>Text Submission</h2>

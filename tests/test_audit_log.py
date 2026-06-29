@@ -1,4 +1,5 @@
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 import audit_log
 
@@ -101,3 +102,33 @@ def test_appeal_entries_can_be_stored_and_retrieved(tmp_path, monkeypatch):
     assert entries[1]["status"] == "under_review"
     assert entries[1]["appeal_reasoning"] == "I wrote this myself."
     assert entries[1]["original_attribution"] == "likely_ai"
+
+
+def test_multiple_classification_entries_can_be_written_quickly(tmp_path, monkeypatch):
+    db_path = tmp_path / "test_concurrent_audit.db"
+    monkeypatch.setenv("PROVENANCE_GUARD_DB_PATH", str(db_path))
+    audit_log.init_db()
+
+    def write_entry(index: int) -> None:
+        audit_log.write_log_entry(
+            {
+                "timestamp": f"2026-06-29T00:00:{index:02d}+00:00",
+                "content_id": f"content-{index}",
+                "creator_id": f"creator-{index}",
+                "status": "classified",
+                "attribution": "uncertain",
+                "confidence": 0.5,
+                "llm_score": 0.5,
+                "stylometric_score": 0.5,
+                "predictability_score": 0.5,
+                "entry_type": "classification",
+            }
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(write_entry, range(10)))
+
+    entries = audit_log.get_log()
+
+    assert len(entries) == 10
+    assert {entry["content_id"] for entry in entries} == {f"content-{index}" for index in range(10)}

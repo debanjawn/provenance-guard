@@ -8,6 +8,27 @@ The project also includes a lightweight demo frontend so the system can be teste
 
 ---
 
+## Rubric Coverage Summary
+
+- Content submission endpoint: `POST /submit`
+- Structured JSON response with attribution, confidence, label, and signal scores
+- Multi-signal pipeline: LLM, stylometric, and predictability signals
+- Confidence scoring with documented weights and thresholds
+- Transparency labels for likely human, uncertain, and likely AI
+- Appeals workflow through `POST /appeal`
+- Appeal status changes to `under_review`
+- Structured audit log through `GET /log`
+- Rate limiting on `POST /submit`
+- Analytics dashboard through `GET /analytics`
+- Provenance certificate through `POST /verify-creator`
+- Structured metadata support through `POST /submit-metadata`
+- Demo frontend at `GET /`
+- Optional Groq cloud inference and local Ollama/Qwen inference
+- SQLite audit persistence
+- Pytest coverage for core logic and API workflows
+
+---
+
 ## Features
 
 ### Required Features
@@ -30,6 +51,10 @@ The project also includes a lightweight demo frontend so the system can be teste
 - `POST /verify-creator` provenance certificate.
 - `POST /submit-metadata` structured metadata support for non-text content.
 - Demo frontend served at `GET /` for easier testing and walkthroughs.
+- Optional local LLM inference through Ollama/Qwen.
+- Frontend demo/admin provider selector for switching between Groq and local Ollama.
+- SQLite persistence instead of JSON-file audit storage.
+- 50 passing pytest tests covering core logic and API workflows.
 
 ---
 
@@ -39,9 +64,12 @@ The project also includes a lightweight demo frontend so the system can be teste
 - Flask
 - Flask-Limiter
 - Groq API
+- Ollama local inference
+- Qwen local model support through Ollama
 - python-dotenv
 - HTML/CSS/JavaScript frontend
-- SQLite persistence via Python's built-in `sqlite3`
+- SQLite persistence through Python’s built-in `sqlite3`
+- pytest
 
 ---
 
@@ -72,12 +100,17 @@ pip install -r requirements.txt
 Create a real `.env` file in the repo root:
 
 ```env
+LLM_PROVIDER=groq
 GROQ_API_KEY=your_actual_groq_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+
+OLLAMA_MODEL=qwen2.5-coder:14b
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 The repo includes `.env.example` as a safe template. Do not commit your real `.env`.
 
-Local audit entries are stored in `provenance_guard.db`, which is created automatically when the app starts. The project originally used `audit_log.json` for prototype storage, but SQLite is used now to avoid lost audit entries under concurrent writes.
+Local audit entries are stored in `provenance_guard.db`, which is created automatically when the app starts. The project originally used `audit_log.json` for prototype storage, but SQLite is used now to reduce the risk of lost audit entries under concurrent writes.
 
 Run the app:
 
@@ -97,8 +130,6 @@ The demo frontend runs at:
 http://127.0.0.1:5000/
 ```
 
-The frontend provides forms for text submission, appeals, audit log viewing, analytics, creator verification, and structured metadata submission. It is meant as a lightweight demo interface on top of the API, not as a production UI.
-
 Health check:
 
 ```powershell
@@ -116,22 +147,116 @@ Expected response:
 
 ---
 
+## LLM Provider Configuration
+
+The LLM signal supports both Groq cloud inference and local Ollama/Qwen inference.
+
+The default provider is controlled through `.env`:
+
+```env
+LLM_PROVIDER=groq
+```
+
+or:
+
+```env
+LLM_PROVIDER=ollama
+```
+
+If `LLM_PROVIDER` is missing or invalid, the app defaults to Groq.
+
+### Groq Cloud Inference
+
+To use Groq:
+
+```env
+LLM_PROVIDER=groq
+GROQ_API_KEY=your_actual_groq_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+```
+
+Then run:
+
+```powershell
+python app.py
+```
+
+### Local Ollama/Qwen Inference
+
+To use local Ollama/Qwen inference:
+
+1. Install and run Ollama.
+2. Pull the model:
+
+```powershell
+ollama pull qwen2.5-coder:14b
+```
+
+3. Configure `.env`:
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=qwen2.5-coder:14b
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+4. Run the app:
+
+```powershell
+python app.py
+```
+
+This allows the LLM signal to run locally through Ollama instead of sending the LLM prompt to Groq.
+
+### Frontend Provider Selector
+
+The demo frontend includes a global admin-style provider selector labeled:
+
+```text
+AI Provider for LLM-backed actions
+```
+
+Options:
+
+- Default from `.env`
+- Groq cloud
+- Local Ollama/Qwen
+
+This selector is intended for local demos and interviews. It does not expose API keys or secret values. It currently affects text classification through `POST /submit`, because that is the feature that uses the LLM signal. Other routes like appeals, analytics, audit logs, verification, and metadata scoring do not currently call an LLM.
+
+The app also exposes a safe non-secret endpoint:
+
+```text
+GET /llm-provider
+```
+
+Example response:
+
+```json
+{
+  "default_provider": "ollama",
+  "default_provider_label": "Local Ollama/Qwen"
+}
+```
+
+---
+
 ## Architecture
 
 ### Submission Flow
 
 ```text
 POST /submit
-(raw JSON: creator_id, text)
+(raw JSON: creator_id, text, optional llm_provider)
         ↓
 app.py validates input
-(validated creator_id + raw text)
+(validated creator_id + raw text + provider selection)
         ↓
 Generate content_id
 (content_id + creator_id + raw text)
         ↓
 detectors/llm_signal.py
-(raw text → llm_score + llm_reason)
+(raw text + provider selection → llm_score + llm_reason)
         ↓
 detectors/stylometric_signal.py
 (raw text → stylometric_score + metrics)
@@ -148,8 +273,11 @@ labels.py
 audit_log.py
 (content_id + creator_id + signal scores + confidence + attribution + label + status)
         ↓
+SQLite database
+(provenance_guard.db)
+        ↓
 JSON response
-(content_id + attribution + confidence + signal_scores + label + status)
+(content_id + attribution + confidence + signal_scores + label + status + llm_provider)
 ```
 
 ### Appeal Flow
@@ -170,6 +298,9 @@ Update status
 audit_log.py
 (content_id + original classification + appeal reasoning + updated status)
         ↓
+SQLite database
+(provenance_guard.db)
+        ↓
 JSON response
 (content_id + status + confirmation message)
 ```
@@ -188,8 +319,10 @@ The frontend makes the project easier to demo without manually typing every requ
 
 It supports:
 
+- selecting the LLM provider for LLM-backed actions
 - submitting text to `POST /submit`
 - viewing attribution, confidence, labels, and individual signal scores
+- viewing which LLM provider was used
 - submitting appeals to `POST /appeal`
 - fetching the audit log from `GET /log`
 - fetching analytics from `GET /analytics`
@@ -204,7 +337,7 @@ static/style.css
 static/script.js
 ```
 
-It does not change the backend API behavior. It only calls the existing endpoints and displays the results in a readable interface.
+It does not expose secrets. It only sends safe provider values such as `default`, `groq`, or `ollama`.
 
 ---
 
@@ -223,12 +356,45 @@ http://127.0.0.1:5000/
 Use this page to test the main features visually:
 
 - text submission
+- LLM provider selection
 - transparency label output
 - appeal submission
 - audit log viewing
 - analytics
 - creator verification
 - metadata provenance checks
+
+---
+
+### `GET /health`
+
+Returns a simple health check.
+
+Response:
+
+```json
+{
+  "message": "Provenance Guard API is running",
+  "status": "ok"
+}
+```
+
+---
+
+### `GET /llm-provider`
+
+Returns safe, non-secret information about the default LLM provider.
+
+Example response:
+
+```json
+{
+  "default_provider": "ollama",
+  "default_provider_label": "Local Ollama/Qwen"
+}
+```
+
+This endpoint does not expose API keys or `.env` contents.
 
 ---
 
@@ -245,6 +411,24 @@ Request:
 }
 ```
 
+Optional provider override for local demo use:
+
+```json
+{
+  "creator_id": "test-user-1",
+  "llm_provider": "ollama",
+  "text": "The sun dipped below the horizon, painting the sky in hues of amber and rose."
+}
+```
+
+Valid `llm_provider` values:
+
+```text
+default
+groq
+ollama
+```
+
 Response example:
 
 ```json
@@ -253,6 +437,7 @@ Response example:
   "confidence": 0.3029,
   "content_id": "0571a271a0c34139b25349fe10fba30b",
   "label": "This text appears more consistent with human-written work based on the signals reviewed. This label is not a guarantee, but the system did not find strong signs of AI generation.",
+  "llm_provider": "ollama",
   "signal_scores": {
     "llm": 0.3,
     "predictability": 0.0521,
@@ -291,7 +476,7 @@ Response:
 
 ### `GET /log`
 
-Returns structured audit log entries.
+Returns structured audit log entries from SQLite.
 
 Example appeal-related log entries:
 
@@ -302,6 +487,7 @@ Example appeal-related log entries:
     "confidence": 0.8409,
     "content_id": "18c3ffe225dc4e7884dcf9cbc8e4494d",
     "creator_id": "label-test-ai-extreme",
+    "entry_type": "classification",
     "llm_score": 0.9,
     "predictability_score": 0.9405,
     "status": "classified",
@@ -312,6 +498,7 @@ Example appeal-related log entries:
     "appeal_reasoning": "I wrote this myself from personal experience. My writing style may appear more formal than typical.",
     "content_id": "18c3ffe225dc4e7884dcf9cbc8e4494d",
     "creator_id": "label-test-ai-extreme",
+    "entry_type": "appeal",
     "original_attribution": "likely_ai",
     "original_confidence": 0.8409,
     "status": "under_review",
@@ -465,7 +652,7 @@ File:
 detectors/llm_signal.py
 ```
 
-The LLM signal calls Groq and asks for a structured JSON assessment.
+The LLM signal uses Groq by default and can optionally call a local Ollama model. In both cases, it asks for a structured assessment with a `score` and `reason`.
 
 It measures:
 
@@ -475,6 +662,13 @@ It measures:
 - semantic coherence
 - polish
 - whether the writing feels natural or templated
+
+The LLM parser handles:
+
+- clean JSON
+- JSON inside markdown code fences
+- extra text before or after a JSON object
+- invalid or missing scores through safe fallback behavior
 
 Why this signal exists:
 
@@ -614,6 +808,27 @@ This scored high because multiple signals agreed: the LLM judged it AI-like, the
 
 ---
 
+### Local Ollama/Qwen Case
+
+Input type: formulaic AI-style writing using local Ollama/Qwen
+
+```json
+{
+  "attribution": "uncertain",
+  "confidence": 0.5652,
+  "llm_provider": "ollama",
+  "signal_scores": {
+    "llm": 0.6,
+    "predictability": 0.6466,
+    "stylometric": 0.4451
+  }
+}
+```
+
+This confirms the same `/submit` endpoint can use local Ollama/Qwen for the LLM signal while preserving the same API response shape.
+
+---
+
 ### Uncertain case
 
 Input type: polished but not extreme AI-like text
@@ -720,6 +935,8 @@ The first 10 rapid `POST /submit` requests succeeded. The 11th and 12th returned
 
 The audit log is stored in a local SQLite database and returned through the API as structured JSON.
 
+SQLite replaced the original JSON-file audit log. This improves reliability because SQLite writes are transactional and safer than manually reading and rewriting a JSON file.
+
 Submission entries include:
 
 - timestamp
@@ -731,6 +948,7 @@ Submission entries include:
 - stylometric score
 - predictability score
 - status
+- entry type
 
 Appeal entries include:
 
@@ -741,12 +959,53 @@ Appeal entries include:
 - original confidence
 - appeal reasoning
 - status: `under_review`
+- entry type
 
 The log can be viewed with:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:5000/log
 ```
+
+---
+
+## Testing
+
+The project includes a pytest suite covering unit logic, local persistence, provider selection, and API workflows.
+
+Run tests with:
+
+```powershell
+python -m pytest
+```
+
+Latest verified result:
+
+```text
+50 passed in 0.55s
+```
+
+Test coverage includes:
+
+- scoring thresholds and weighted formula
+- transparency label selection
+- stylometric detector output shape and bounds
+- predictability detector output shape and ranking behavior
+- metadata provenance scoring
+- SQLite audit log initialization, writes, reads, and appeal entries
+- lightweight SQLite write workflow checks
+- LLM provider selection for Groq and Ollama
+- robust LLM JSON parsing, including markdown-fenced JSON
+- Ollama fallback behavior without requiring a real Ollama call
+- Flask route smoke tests
+- `/submit` provider override behavior
+- `/appeal` workflow behavior
+- `/log` route behavior
+- `/analytics` route behavior
+- `/verify-creator` route behavior
+- `/submit-metadata` route behavior
+
+The tests avoid real Groq and Ollama network calls by using monkeypatching/stubs where needed.
 
 ---
 
@@ -798,6 +1057,24 @@ GET /
 
 The frontend provides a simple browser interface for the main system features. It helps demonstrate the project by letting a user submit text, view labels and scores, submit appeals, inspect the audit log, view analytics, verify creators, and test structured metadata without manually writing API requests.
 
+### Local LLM Provider Support
+
+Implemented.
+
+The LLM signal can use either Groq cloud inference or local Ollama/Qwen inference. The default provider is controlled through `.env`, and the frontend includes a local demo/admin selector for switching providers during interviews or demos.
+
+### SQLite Persistence
+
+Implemented.
+
+The audit log uses SQLite instead of JSON-file storage. This gives the project transactional local persistence while keeping it lightweight.
+
+### Test Suite
+
+Implemented.
+
+The project includes 50 passing pytest tests for core logic and API workflows.
+
 ---
 
 ## Known Limitations
@@ -819,9 +1096,15 @@ Specific limitations:
    If a person heavily edits AI-generated text, the human variation may lower the score and move the result into the uncertain range.
 
 5. **The LLM signal is not proof.**  
-   Groq provides a judgment, not ground truth. That is why the system uses multiple signals and conservative thresholds.
+   Groq and Ollama provide judgments, not ground truth. That is why the system uses multiple signals and conservative thresholds.
 
-If this were deployed for real users, I would add stronger calibration, human review tools, authenticated audit access, larger validation sets, and clearer creator-facing explanations.
+6. **Provider selection is for local demo/admin use.**  
+   The frontend provider selector is useful for demos, but in a real deployed system, provider configuration would likely be controlled by deployment settings or admin-only controls.
+
+7. **SQLite is lightweight, not a full production database setup.**  
+   SQLite is a good upgrade over JSON-file storage for this local prototype, but a larger deployed system would likely use PostgreSQL or another production database.
+
+If this were deployed for real users, I would add stronger calibration, human review tools, authenticated audit access, larger validation sets, stricter access controls, and clearer creator-facing explanations.
 
 ---
 
@@ -831,7 +1114,64 @@ The planning spec helped guide the implementation because it defined the expecte
 
 One way the implementation diverged from the original plan was that the first version of the predictability signal under-scored very formulaic AI-style text. The system could reach `likely_human` and `uncertain`, but not `likely_ai` through `/submit`. I revised the predictability signal so repeated formulaic phrases had a stronger effect, which made all three transparency labels reachable while still keeping casual human writing low.
 
-A second small change was adding a lightweight demo frontend after the backend was already complete. This did not change the API design, but it made the system easier to demonstrate and inspect during a walkthrough.
+A second change was adding a lightweight demo frontend after the backend was already complete. This did not change the API design, but it made the system easier to demonstrate and inspect during a walkthrough.
+
+A third change was replacing JSON-file audit storage with SQLite after identifying the risk of race conditions and lost audit entries with manual file writes.
+
+A fourth change was adding optional local Ollama/Qwen inference so the LLM signal can run locally on my machine instead of only through a cloud API.
+
+A fifth change was expanding testing from basic unit checks into broader API workflow tests.
+
+---
+
+## Post-Submission Improvements
+
+After the initial version of the project was submitted and graded, I made several engineering improvements based on feedback and further iteration.
+
+### Before
+
+The original submitted version included:
+
+- Flask API routes for submission, appeals, logs, analytics, metadata, and verification
+- three-signal scoring pipeline
+- Groq-backed LLM signal
+- transparency labels
+- JSON-file audit storage
+- rate limiting
+- demo frontend
+- documentation and planning files
+
+This version worked for the project requirements, but some parts were still prototype-level.
+
+### After
+
+The improved version adds:
+
+1. **SQLite audit persistence**
+
+   The original audit log used JSON file storage. That was simple, but concurrent writes could cause race conditions or lost audit entries. I refactored the audit layer to use SQLite with transactional writes.
+
+2. **Local Ollama/Qwen inference**
+
+   The LLM signal now supports both Groq cloud inference and local Ollama/Qwen inference. This lets the project run the LLM-backed signal locally through my GPU setup when `LLM_PROVIDER=ollama`.
+
+3. **Frontend provider selector**
+
+   The frontend now includes a demo/admin provider selector for LLM-backed actions. This makes it easy to switch between Groq cloud inference and local Ollama/Qwen inference during demos.
+
+4. **Robust model-response parsing**
+
+   Local models often return JSON inside markdown code fences. I improved the parser so it can handle clean JSON, fenced JSON, and extra text around JSON before falling back.
+
+5. **Expanded test suite**
+
+   I added pytest coverage for core scoring logic, labels, detectors, SQLite persistence, metadata analysis, LLM provider selection, Ollama parsing behavior, and API workflows. The suite now has 50 passing tests.
+
+6. **API workflow regression tests**
+
+   The tests now cover not only individual functions but also important Flask routes and workflows, including appeals, logs, analytics, metadata submission, and creator verification.
+
+These changes make the project more reliable, easier to demo, and stronger as an engineering portfolio project.
 
 ---
 
@@ -870,6 +1210,33 @@ I prompted Codex to add production-layer features one at a time: labels, appeals
 
 I checked each feature manually by running the API locally and testing the endpoint responses. For the frontend, I tested the browser forms and revised the result display formatting so key/value outputs were readable. I did not accept the generated code blindly; I tested each endpoint and UI section before committing.
 
+### Instance 4: Post-feedback engineering improvements
+
+After receiving feedback about JSON-file persistence and missing automated tests, I used Codex to help refactor the audit log from JSON storage to SQLite and to add pytest coverage.
+
+I reviewed and tested the changes locally:
+
+```text
+50 passed in 0.55s
+```
+
+### Instance 5: Local LLM provider support
+
+I used Codex to help add optional Ollama/Qwen support to the LLM signal while preserving Groq as the default cloud provider. I also added tests for provider selection and parser robustness.
+
+I manually verified that local Ollama/Qwen worked through the same `/submit` endpoint:
+
+```json
+{
+  "llm_provider": "ollama",
+  "signal_scores": {
+    "llm": 0.6,
+    "predictability": 0.6466,
+    "stylometric": 0.4451
+  }
+}
+```
+
 ---
 
 ## Files
@@ -886,6 +1253,15 @@ templates/
 static/
   style.css
   script.js
+tests/
+  test_app_routes.py
+  test_audit_log.py
+  test_labels.py
+  test_llm_signal.py
+  test_metadata_signal.py
+  test_predictability_signal.py
+  test_scoring.py
+  test_stylometric_signal.py
 scoring.py
 labels.py
 audit_log.py

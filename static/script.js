@@ -61,6 +61,13 @@ function formatJson(value) {
   return `<pre class="result-json">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
 }
 
+function providerLabel(provider) {
+  if (provider === "ollama") {
+    return "Local Ollama/Qwen";
+  }
+  return "Groq cloud";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const submitResult = document.getElementById("submit-result");
   const appealResult = document.getElementById("appeal-result");
@@ -68,6 +75,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const metadataResult = document.getElementById("metadata-result");
   const logResult = document.getElementById("log-result");
   const analyticsResult = document.getElementById("analytics-result");
+  const providerSelect = document.getElementById("llm-provider-select");
+  const providerDefault = document.getElementById("llm-provider-default");
 
   setEmpty(submitResult, "Submission results will appear here.");
   setEmpty(appealResult, "Appeal responses will appear here.");
@@ -75,6 +84,15 @@ document.addEventListener("DOMContentLoaded", () => {
   setEmpty(metadataResult, "Metadata analysis will appear here.");
   setEmpty(logResult, "Click Fetch Log to load recent audit entries.");
   setEmpty(analyticsResult, "Click Fetch Analytics to load dashboard metrics.");
+  providerDefault.textContent = "Default provider from .env: Loading...";
+
+  apiRequest("/llm-provider")
+    .then((data) => {
+      providerDefault.textContent = `Default provider from .env: ${data.default_provider_label || providerLabel(data.default_provider)}`;
+    })
+    .catch(() => {
+      providerDefault.textContent = "Default provider from .env: Groq cloud";
+    });
 
   document.getElementById("submit-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -87,6 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({
           creator_id: formData.get("creator_id"),
           text: formData.get("text"),
+          llm_provider: providerSelect.value,
         }),
       });
 
@@ -95,6 +114,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ["attribution", data.attribution],
         ["confidence", data.confidence],
         ["label", data.label],
+        ["Used LLM Provider", providerLabel(data.llm_provider)],
         ["signal_scores.llm", data.signal_scores.llm],
         ["signal_scores.stylometric", data.signal_scores.stylometric],
         ["signal_scores.predictability", data.signal_scores.predictability],

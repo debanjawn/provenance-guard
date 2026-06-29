@@ -13,7 +13,12 @@ from audit_log import (
     write_appeal_log,
     write_submission_log,
 )
-from detectors.llm_signal import get_llm_signal
+from detectors.llm_signal import (
+    get_default_provider,
+    get_effective_provider,
+    get_llm_signal,
+    get_provider_label,
+)
 from detectors.predictability_signal import get_predictability_signal
 from detectors.stylometric_signal import get_stylometric_signal
 from labels import generate_label
@@ -53,6 +58,15 @@ def log():
 def analytics():
     entries = get_log()
     return jsonify(get_analytics(entries))
+
+
+@app.get("/llm-provider")
+def llm_provider():
+    default_provider = get_default_provider()
+    return jsonify({
+        "default_provider": default_provider,
+        "default_provider_label": get_provider_label(default_provider),
+    })
 
 
 @app.post("/verify-creator")
@@ -100,13 +114,15 @@ def submit():
     payload = request.get_json(silent=True) or {}
     creator_id = payload.get("creator_id")
     text = payload.get("text")
+    provider_override = payload.get("llm_provider")
 
     if not creator_id or not text:
         return jsonify({
             "error": "Both 'creator_id' and 'text' are required."
         }), 400
 
-    llm_signal = get_llm_signal(text)
+    llm_signal = get_llm_signal(text, provider_override)
+    llm_provider = get_effective_provider(provider_override)
     stylometric_signal = get_stylometric_signal(text)
     predictability_signal = get_predictability_signal(text)
     combined_result = combine_scores(
@@ -138,6 +154,7 @@ def submit():
         "confidence": confidence,
         "signal_scores": combined_result["signal_scores"],
         "label": generate_label(attribution, confidence),
+        "llm_provider": llm_provider,
         "status": status
     })
 
