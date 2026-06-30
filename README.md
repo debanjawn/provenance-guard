@@ -54,7 +54,7 @@ The project also includes a lightweight demo frontend so the system can be teste
 - Optional local LLM inference through Ollama/Qwen.
 - Frontend demo/admin provider selector for switching between Groq and local Ollama.
 - SQLite persistence instead of JSON-file audit storage.
-- 50 passing pytest tests covering core logic and API workflows.
+- 52 passing pytest tests covering core logic, latency instrumentation, and API workflows.
 
 ---
 
@@ -989,7 +989,7 @@ python -m pytest
 Latest verified result:
 
 ```text
-50 passed in 0.55s
+52 passed in 7.75s
 ```
 
 Test coverage includes:
@@ -1033,6 +1033,8 @@ GET /analytics
 ```
 
 It returns detection counts, appeal rate, and average confidence.
+
+The dashboard now also reports logged LLM provider latency so it is easier to compare local Ollama/Qwen inference with Groq cloud inference during demos and evaluation.
 
 ### Provenance Certificate
 
@@ -1080,7 +1082,7 @@ The audit log uses SQLite instead of JSON-file storage. This gives the project t
 
 Implemented.
 
-The project includes 50 passing pytest tests for core logic and API workflows.
+The project includes 52 passing pytest tests for core logic and API workflows.
 
 ---
 

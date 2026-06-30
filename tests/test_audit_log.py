@@ -18,6 +18,46 @@ def test_init_db_creates_audit_entries_table(tmp_path, monkeypatch):
     assert row is not None
 
 
+def test_init_db_adds_latency_columns_to_existing_table(tmp_path, monkeypatch):
+    db_path = tmp_path / "existing_audit.db"
+    monkeypatch.setenv("PROVENANCE_GUARD_DB_PATH", str(db_path))
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE audit_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                content_id TEXT,
+                creator_id TEXT,
+                status TEXT,
+                attribution TEXT,
+                confidence REAL,
+                llm_score REAL,
+                stylometric_score REAL,
+                predictability_score REAL,
+                label TEXT,
+                original_attribution TEXT,
+                original_confidence REAL,
+                appeal_reasoning TEXT,
+                entry_type TEXT NOT NULL
+            )
+            """
+        )
+        connection.commit()
+
+    audit_log.init_db()
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(audit_entries)").fetchall()
+        }
+
+    assert "llm_provider" in columns
+    assert "llm_latency_ms" in columns
+
+
 def test_write_log_entry_stores_a_classification_entry(tmp_path, monkeypatch):
     db_path = tmp_path / "test_audit.db"
     monkeypatch.setenv("PROVENANCE_GUARD_DB_PATH", str(db_path))
@@ -32,6 +72,8 @@ def test_write_log_entry_stores_a_classification_entry(tmp_path, monkeypatch):
             "attribution": "likely_human",
             "confidence": 0.2222,
             "llm_score": 0.2,
+            "llm_provider": "groq",
+            "llm_latency_ms": 142,
             "stylometric_score": 0.3,
             "predictability_score": 0.1,
             "entry_type": "classification",
@@ -44,6 +86,8 @@ def test_write_log_entry_stores_a_classification_entry(tmp_path, monkeypatch):
     assert entries[0]["content_id"] == "content-123"
     assert entries[0]["status"] == "classified"
     assert entries[0]["entry_type"] == "classification"
+    assert entries[0]["llm_provider"] == "groq"
+    assert entries[0]["llm_latency_ms"] == 142
 
 
 def test_get_log_omits_none_fields(tmp_path, monkeypatch):

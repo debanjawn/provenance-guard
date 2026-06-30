@@ -68,6 +68,13 @@ function providerLabel(provider) {
   return "Groq cloud";
 }
 
+function formatLatency(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${value} ms`;
+  }
+  return "Unavailable";
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const submitResult = document.getElementById("submit-result");
   const appealResult = document.getElementById("appeal-result");
@@ -115,6 +122,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ["confidence", data.confidence],
         ["label", data.label],
         ["Used LLM Provider", providerLabel(data.llm_provider)],
+        ["LLM latency", formatLatency(data.llm_latency_ms)],
         ["signal_scores.llm", data.signal_scores.llm],
         ["signal_scores.stylometric", data.signal_scores.stylometric],
         ["signal_scores.predictability", data.signal_scores.predictability],
@@ -232,6 +240,9 @@ document.addEventListener("DOMContentLoaded", () => {
         ["appeal_count", data.appeal_count],
         ["appeal_rate", data.appeal_rate],
         ["average_confidence", data.average_confidence],
+        ["Average LLM latency", formatLatency(data.average_llm_latency_ms)],
+        ["Average Groq latency", formatLatency(data.average_llm_latency_by_provider?.groq)],
+        ["Average Ollama latency", formatLatency(data.average_llm_latency_by_provider?.ollama)],
       ]));
     } catch (error) {
       setError(analyticsResult, error.message);

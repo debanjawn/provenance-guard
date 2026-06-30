@@ -5,6 +5,10 @@ from pathlib import Path
 
 
 DB_PATH = Path(__file__).resolve().parent / "provenance_guard.db"
+OPTIONAL_DB_COLUMNS = {
+    "llm_provider": "TEXT",
+    "llm_latency_ms": "INTEGER",
+}
 
 ENTRY_COLUMNS = (
     "timestamp",
@@ -14,6 +18,8 @@ ENTRY_COLUMNS = (
     "attribution",
     "confidence",
     "llm_score",
+    "llm_provider",
+    "llm_latency_ms",
     "stylometric_score",
     "predictability_score",
     "label",
@@ -39,6 +45,8 @@ def init_db() -> None:
                 attribution TEXT,
                 confidence REAL,
                 llm_score REAL,
+                llm_provider TEXT,
+                llm_latency_ms INTEGER,
                 stylometric_score REAL,
                 predictability_score REAL,
                 label TEXT,
@@ -49,6 +57,7 @@ def init_db() -> None:
             )
             """
         )
+        _ensure_optional_columns(connection)
         connection.commit()
 
 
@@ -74,6 +83,18 @@ def _row_to_entry(row: sqlite3.Row) -> dict:
     return entry
 
 
+def _ensure_optional_columns(connection: sqlite3.Connection) -> None:
+    existing_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(audit_entries)").fetchall()
+    }
+    for column_name, column_type in OPTIONAL_DB_COLUMNS.items():
+        if column_name not in existing_columns:
+            connection.execute(
+                f"ALTER TABLE audit_entries ADD COLUMN {column_name} {column_type}"
+            )
+
+
 def get_log() -> list:
     with _get_connection() as connection:
         rows = connection.execute(
@@ -86,6 +107,8 @@ def get_log() -> list:
                 attribution,
                 confidence,
                 llm_score,
+                llm_provider,
+                llm_latency_ms,
                 stylometric_score,
                 predictability_score,
                 label,
@@ -112,6 +135,8 @@ def find_submission_by_content_id(content_id: str) -> dict | None:
                 attribution,
                 confidence,
                 llm_score,
+                llm_provider,
+                llm_latency_ms,
                 stylometric_score,
                 predictability_score,
                 label,
@@ -144,6 +169,8 @@ def write_submission_log(entry: dict) -> None:
                 attribution,
                 confidence,
                 llm_score,
+                llm_provider,
+                llm_latency_ms,
                 stylometric_score,
                 predictability_score,
                 label,
@@ -152,7 +179,7 @@ def write_submission_log(entry: dict) -> None:
                 appeal_reasoning,
                 entry_type
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             tuple(payload[column] for column in ENTRY_COLUMNS),
         )
@@ -190,6 +217,8 @@ def write_appeal_log(content_id: str, appeal_reasoning: str) -> dict | None:
                 attribution,
                 confidence,
                 llm_score,
+                llm_provider,
+                llm_latency_ms,
                 stylometric_score,
                 predictability_score,
                 label,
@@ -198,7 +227,7 @@ def write_appeal_log(content_id: str, appeal_reasoning: str) -> dict | None:
                 appeal_reasoning,
                 entry_type
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             tuple(appeal_entry.get(column) for column in ENTRY_COLUMNS),
         )

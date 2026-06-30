@@ -19,6 +19,7 @@ def test_provider_defaults_to_groq_when_missing(monkeypatch):
     result = llm_signal.get_llm_signal("A real piece of text for routing.")
 
     assert result["reason"] == "groq selected"
+    assert isinstance(result["latency_ms"], int)
     assert llm_signal.get_default_provider() == "groq"
 
 
@@ -38,6 +39,7 @@ def test_provider_selects_ollama_when_requested(monkeypatch):
     result = llm_signal.get_llm_signal("A real piece of text for routing.")
 
     assert result["reason"] == "ollama selected"
+    assert isinstance(result["latency_ms"], int)
     assert llm_signal.get_effective_provider("ollama") == "ollama"
 
 
@@ -52,6 +54,7 @@ def test_invalid_provider_falls_back_to_groq(monkeypatch):
     result = llm_signal.get_llm_signal("A real piece of text for routing.")
 
     assert result["reason"] == "groq fallback"
+    assert isinstance(result["latency_ms"], int)
     assert llm_signal.get_effective_provider("something-else") == "groq"
 
 
@@ -120,3 +123,22 @@ def test_get_ollama_signal_returns_fallback_on_http_failure(monkeypatch):
 
     assert result["score"] == 0.5
     assert "Ollama" in result["reason"]
+
+
+def test_get_llm_signal_includes_measured_latency(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    timings = iter([10.0, 10.1234])
+    monkeypatch.setattr(llm_signal.time, "perf_counter", lambda: next(timings))
+    monkeypatch.setattr(
+        llm_signal,
+        "get_groq_signal",
+        lambda text: {"score": 0.2, "reason": "groq selected"},
+    )
+
+    result = llm_signal.get_llm_signal("A real piece of text for routing.")
+
+    assert result == {
+        "score": 0.2,
+        "reason": "groq selected",
+        "latency_ms": 123,
+    }

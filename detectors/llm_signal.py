@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from urllib import error, request
 
 from dotenv import load_dotenv
@@ -38,10 +39,11 @@ SYSTEM_PROMPT = (
 )
 
 
-def _uncertain_signal(reason: str) -> dict:
+def _uncertain_signal(reason: str, latency_ms: int = 0) -> dict:
     return {
         "score": 0.5,
         "reason": reason,
+        "latency_ms": latency_ms,
     }
 
 
@@ -207,6 +209,11 @@ def get_llm_signal(text: str, provider_override: str | None = None) -> dict:
         )
 
     provider = get_effective_provider(provider_override)
-    if provider == "ollama":
-        return get_ollama_signal(text)
-    return get_groq_signal(text)
+    provider_fn = get_ollama_signal if provider == "ollama" else get_groq_signal
+    start_time = time.perf_counter()
+    result = provider_fn(text)
+    latency_ms = int(round((time.perf_counter() - start_time) * 1000))
+    return {
+        **result,
+        "latency_ms": latency_ms,
+    }

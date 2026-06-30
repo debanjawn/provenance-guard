@@ -15,7 +15,7 @@ def _create_test_app(monkeypatch, tmp_path, **config):
 def _stub_submit_detectors(monkeypatch, expected_provider_override=None):
     def stubbed_llm_signal(text, provider_override=None):
         assert provider_override == expected_provider_override
-        return {"score": 0.2, "reason": "stubbed llm"}
+        return {"score": 0.2, "reason": "stubbed llm", "latency_ms": 123}
 
     monkeypatch.setattr(app_module, "get_llm_signal", stubbed_llm_signal)
     monkeypatch.setattr(
@@ -88,6 +88,7 @@ def test_submit_without_request_override_uses_env_groq(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert payload["llm_provider"] == "groq"
+    assert payload["llm_latency_ms"] == 123
 
 
 def test_submit_without_request_override_uses_env_ollama(monkeypatch, tmp_path):
@@ -104,6 +105,7 @@ def test_submit_without_request_override_uses_env_ollama(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert payload["llm_provider"] == "ollama"
+    assert payload["llm_latency_ms"] == 123
 
 
 def test_submit_request_override_groq_wins(monkeypatch, tmp_path):
@@ -121,6 +123,7 @@ def test_submit_request_override_groq_wins(monkeypatch, tmp_path):
 
     assert response.status_code == 200
     assert payload["llm_provider"] == "groq"
+    assert payload["llm_latency_ms"] == 123
 
 
 def test_submit_request_override_ollama_wins(monkeypatch, tmp_path):
@@ -141,6 +144,7 @@ def test_submit_request_override_ollama_wins(monkeypatch, tmp_path):
     assert payload["attribution"] == "likely_human"
     assert "content_id" in payload
     assert payload["llm_provider"] == "ollama"
+    assert payload["llm_latency_ms"] == 123
     assert payload["signal_scores"] == {
         "llm": 0.2,
         "stylometric": 0.3,
@@ -180,6 +184,8 @@ def test_appeal_with_valid_content_id_returns_under_review_and_is_visible_in_log
     assert len(entries) == 2
     assert entries[0]["content_id"] == content_id
     assert entries[0]["status"] == "classified"
+    assert entries[0]["llm_provider"] == "groq"
+    assert entries[0]["llm_latency_ms"] == 123
     assert entries[1]["content_id"] == content_id
     assert entries[1]["status"] == "under_review"
     assert entries[1]["appeal_reasoning"] == "I wrote this text myself."
@@ -273,6 +279,8 @@ def test_analytics_route_returns_expected_metrics(monkeypatch, tmp_path):
             "attribution": "likely_human",
             "confidence": 0.2,
             "llm_score": 0.2,
+            "llm_provider": "groq",
+            "llm_latency_ms": 100,
             "stylometric_score": 0.2,
             "predictability_score": 0.2,
         }
@@ -286,6 +294,8 @@ def test_analytics_route_returns_expected_metrics(monkeypatch, tmp_path):
             "attribution": "uncertain",
             "confidence": 0.5,
             "llm_score": 0.5,
+            "llm_provider": "ollama",
+            "llm_latency_ms": 200,
             "stylometric_score": 0.5,
             "predictability_score": 0.5,
         }
@@ -299,6 +309,8 @@ def test_analytics_route_returns_expected_metrics(monkeypatch, tmp_path):
             "attribution": "likely_ai",
             "confidence": 0.8,
             "llm_score": 0.8,
+            "llm_provider": "groq",
+            "llm_latency_ms": 400,
             "stylometric_score": 0.8,
             "predictability_score": 0.8,
         }
@@ -317,6 +329,11 @@ def test_analytics_route_returns_expected_metrics(monkeypatch, tmp_path):
         "appeal_count": 1,
         "appeal_rate": 0.3333,
         "average_confidence": 0.5,
+        "average_llm_latency_ms": 233,
+        "average_llm_latency_by_provider": {
+            "groq": 250,
+            "ollama": 200,
+        },
     }
 
 

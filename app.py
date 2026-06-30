@@ -107,6 +107,7 @@ def register_routes(app: Flask, limiter: Limiter) -> None:
 
         llm_signal = get_llm_signal(text, provider_override)
         llm_provider = get_effective_provider(provider_override)
+        llm_latency_ms = llm_signal.get("latency_ms")
         stylometric_signal = get_stylometric_signal(text)
         predictability_signal = get_predictability_signal(text)
         combined_result = combine_scores(
@@ -127,6 +128,8 @@ def register_routes(app: Flask, limiter: Limiter) -> None:
             "attribution": attribution,
             "confidence": confidence,
             "llm_score": llm_signal["score"],
+            "llm_provider": llm_provider,
+            "llm_latency_ms": llm_latency_ms,
             "stylometric_score": stylometric_signal["score"],
             "predictability_score": predictability_signal["score"],
             "status": status,
@@ -139,6 +142,7 @@ def register_routes(app: Flask, limiter: Limiter) -> None:
             "signal_scores": combined_result["signal_scores"],
             "label": generate_label(attribution, confidence),
             "llm_provider": llm_provider,
+            "llm_latency_ms": llm_latency_ms,
             "status": status
         })
 
