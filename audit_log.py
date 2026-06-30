@@ -25,6 +25,8 @@ ENTRY_COLUMNS = (
 
 
 def init_db() -> None:
+    db_path = _get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(_get_db_path()) as connection:
         connection.execute(
             """
@@ -73,7 +75,6 @@ def _row_to_entry(row: sqlite3.Row) -> dict:
 
 
 def get_log() -> list:
-    init_db()
     with _get_connection() as connection:
         rows = connection.execute(
             """
@@ -100,7 +101,6 @@ def get_log() -> list:
 
 
 def find_submission_by_content_id(content_id: str) -> dict | None:
-    init_db()
     with _get_connection() as connection:
         row = connection.execute(
             """
@@ -130,7 +130,6 @@ def find_submission_by_content_id(content_id: str) -> dict | None:
 
 
 def write_submission_log(entry: dict) -> None:
-    init_db()
     payload = {column: entry.get(column) for column in ENTRY_COLUMNS}
     payload["entry_type"] = entry.get("entry_type", "classification")
 

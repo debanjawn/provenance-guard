@@ -243,6 +243,13 @@ Example response:
 
 ## Architecture
 
+### Post-Feedback Improvements
+
+- The Flask app now uses an application factory pattern through `create_app()`.
+- Tests create isolated app instances with temporary configuration instead of reloading the `app` module.
+- SQLite is initialized once at startup, and `audit_log.py` operations now run against that initialized database instead of defensively calling `init_db()` on every operation.
+- This makes configuration and tests more predictable and aligns the project more closely with common production Flask patterns.
+
 ### Submission Flow
 
 ```text

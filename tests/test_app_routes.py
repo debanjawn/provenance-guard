@@ -1,17 +1,18 @@
-import importlib
-import sys
-
+import app as app_module
 import audit_log
 import verification
 
 
-def _load_app_module(monkeypatch, tmp_path):
+def _create_test_app(monkeypatch, tmp_path, **config):
     monkeypatch.setenv("PROVENANCE_GUARD_DB_PATH", str(tmp_path / "routes_test.db"))
-    sys.modules.pop("app", None)
-    return importlib.import_module("app")
+    return app_module.create_app({
+        "TESTING": True,
+        "RATELIMIT_ENABLED": False,
+        **config,
+    })
 
 
-def _stub_submit_detectors(monkeypatch, app_module, expected_provider_override=None):
+def _stub_submit_detectors(monkeypatch, expected_provider_override=None):
     def stubbed_llm_signal(text, provider_override=None):
         assert provider_override == expected_provider_override
         return {"score": 0.2, "reason": "stubbed llm"}
@@ -40,8 +41,7 @@ def _submit_text(client, creator_id="creator-1", text="A test submission.", llm_
 
 
 def test_health_route_returns_ok(monkeypatch, tmp_path):
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.get("/health")
 
@@ -54,8 +54,7 @@ def test_health_route_returns_ok(monkeypatch, tmp_path):
 
 def test_llm_provider_route_returns_default_provider_info(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.get("/llm-provider")
 
@@ -67,8 +66,7 @@ def test_llm_provider_route_returns_default_provider_info(monkeypatch, tmp_path)
 
 
 def test_submit_without_text_returns_400(monkeypatch, tmp_path):
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.post("/submit", json={"creator_id": "creator-1"})
 
@@ -78,10 +76,9 @@ def test_submit_without_text_returns_400(monkeypatch, tmp_path):
 
 def test_submit_without_request_override_uses_env_groq(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "groq")
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    _stub_submit_detectors(monkeypatch, app_module, expected_provider_override=None)
+    _stub_submit_detectors(monkeypatch, expected_provider_override=None)
 
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
     response = _submit_text(
         client,
         creator_id="creator-2",
@@ -92,12 +89,12 @@ def test_submit_without_request_override_uses_env_groq(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert payload["llm_provider"] == "groq"
 
+
 def test_submit_without_request_override_uses_env_ollama(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    _stub_submit_detectors(monkeypatch, app_module, expected_provider_override=None)
+    _stub_submit_detectors(monkeypatch, expected_provider_override=None)
 
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
     response = _submit_text(
         client,
         creator_id="creator-ollama-default",
@@ -111,10 +108,9 @@ def test_submit_without_request_override_uses_env_ollama(monkeypatch, tmp_path):
 
 def test_submit_request_override_groq_wins(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    _stub_submit_detectors(monkeypatch, app_module, expected_provider_override="groq")
+    _stub_submit_detectors(monkeypatch, expected_provider_override="groq")
 
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
     response = _submit_text(
         client,
         creator_id="creator-override-groq",
@@ -129,10 +125,9 @@ def test_submit_request_override_groq_wins(monkeypatch, tmp_path):
 
 def test_submit_request_override_ollama_wins(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "groq")
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    _stub_submit_detectors(monkeypatch, app_module, expected_provider_override="ollama")
+    _stub_submit_detectors(monkeypatch, expected_provider_override="ollama")
 
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
     response = _submit_text(
         client,
         creator_id="creator-3",
@@ -155,9 +150,8 @@ def test_submit_request_override_ollama_wins(monkeypatch, tmp_path):
 
 def test_appeal_with_valid_content_id_returns_under_review_and_is_visible_in_log(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "groq")
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    _stub_submit_detectors(monkeypatch, app_module, expected_provider_override=None)
-    client = app_module.app.test_client()
+    _stub_submit_detectors(monkeypatch, expected_provider_override=None)
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     submit_response = _submit_text(
         client,
@@ -192,8 +186,7 @@ def test_appeal_with_valid_content_id_returns_under_review_and_is_visible_in_log
 
 
 def test_appeal_missing_fields_returns_400(monkeypatch, tmp_path):
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     missing_content_id = client.post(
         "/appeal",
@@ -211,8 +204,7 @@ def test_appeal_missing_fields_returns_400(monkeypatch, tmp_path):
 
 
 def test_appeal_unknown_content_id_returns_404(monkeypatch, tmp_path):
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.post(
         "/appeal",
@@ -228,9 +220,8 @@ def test_appeal_unknown_content_id_returns_404(monkeypatch, tmp_path):
 
 def test_log_route_returns_entries_wrapper(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "groq")
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    _stub_submit_detectors(monkeypatch, app_module, expected_provider_override=None)
-    client = app_module.app.test_client()
+    _stub_submit_detectors(monkeypatch, expected_provider_override=None)
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     _submit_text(client, creator_id="log-creator", text="This is a logged submission.")
     response = client.get("/log")
@@ -244,9 +235,8 @@ def test_log_route_returns_entries_wrapper(monkeypatch, tmp_path):
 
 def test_log_route_includes_classification_and_appeal_entries(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_PROVIDER", "groq")
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    _stub_submit_detectors(monkeypatch, app_module, expected_provider_override=None)
-    client = app_module.app.test_client()
+    _stub_submit_detectors(monkeypatch, expected_provider_override=None)
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     submit_response = _submit_text(
         client,
@@ -270,8 +260,10 @@ def test_log_route_includes_classification_and_appeal_entries(monkeypatch, tmp_p
 
 def test_analytics_route_returns_expected_metrics(monkeypatch, tmp_path):
     monkeypatch.setenv("PROVENANCE_GUARD_DB_PATH", str(tmp_path / "analytics_test.db"))
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    audit_log.init_db()
+    app = app_module.create_app({
+        "TESTING": True,
+        "RATELIMIT_ENABLED": False,
+    })
     audit_log.write_submission_log(
         {
             "timestamp": "2026-06-29T00:00:00+00:00",
@@ -313,7 +305,7 @@ def test_analytics_route_returns_expected_metrics(monkeypatch, tmp_path):
     )
     audit_log.write_appeal_log("analytics-ai", "I want this reviewed.")
 
-    client = app_module.app.test_client()
+    client = app.test_client()
     response = client.get("/analytics")
 
     assert response.status_code == 200
@@ -329,8 +321,7 @@ def test_analytics_route_returns_expected_metrics(monkeypatch, tmp_path):
 
 
 def test_submit_metadata_human_process_route(monkeypatch, tmp_path):
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.post(
         "/submit-metadata",
@@ -354,8 +345,7 @@ def test_submit_metadata_human_process_route(monkeypatch, tmp_path):
 
 
 def test_submit_metadata_ai_assisted_route(monkeypatch, tmp_path):
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.post(
         "/submit-metadata",
@@ -379,8 +369,7 @@ def test_submit_metadata_ai_assisted_route(monkeypatch, tmp_path):
 
 
 def test_submit_metadata_missing_metadata_returns_400(monkeypatch, tmp_path):
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.post(
         "/submit-metadata",
@@ -400,8 +389,7 @@ def test_verify_creator_route_returns_verified_certificate(monkeypatch, tmp_path
         "VERIFIED_CREATORS_PATH",
         tmp_path / "verified_creators.json",
     )
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.post(
         "/verify-creator",
@@ -420,8 +408,7 @@ def test_verify_creator_route_returns_verified_certificate(monkeypatch, tmp_path
 
 
 def test_verify_creator_missing_creator_id_returns_400(monkeypatch, tmp_path):
-    app_module = _load_app_module(monkeypatch, tmp_path)
-    client = app_module.app.test_client()
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
 
     response = client.post(
         "/verify-creator",
