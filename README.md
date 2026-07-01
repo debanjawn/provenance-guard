@@ -30,6 +30,7 @@ The project is designed around a writing-platform scenario where falsely labelin
 - Calibration metadata explaining why a result landed where it did
 - Strong AI-pattern agreement rule for obvious assistant-template text
 - Browser demo frontend
+- Windows-safe pytest runner
 - 67 passing pytest tests
 
 ---
@@ -51,14 +52,14 @@ It shows:
 - signal scores
 - weighted signal contributions
 
-Screenshots can be added later under:
+Screenshots can be added under:
 
 ```text
 docs/assets/frontend-classification.png
 docs/assets/analytics-dashboard.png
 ```
 
-Then referenced with:
+Example Markdown:
 
 ```md
 ![Classification demo](docs/assets/frontend-classification.png)
@@ -932,6 +933,40 @@ These values vary based on hardware, active model, network conditions, and promp
 
 ---
 
+## Latency Benchmark Results
+
+Provenance Guard logs LLM provider latency for each `/submit` request. This made it possible to compare local Ollama/Qwen inference before and after prompt/output-token controls.
+
+### Dashboard Baseline
+
+![Analytics dashboard baseline](docs/assets/analytics-before.png)
+
+Initial local analytics showed Ollama/Qwen 14B averaging around `3116 ms` and Groq averaging around `621 ms`.
+
+### Local Ollama/Qwen Benchmark
+
+![Ollama benchmark result](docs/assets/ollama-benchmark-after.png)
+
+After adding a shorter LLM prompt, output-token limits, and a configurable local benchmark rate limit, the Ollama/Qwen 14B benchmark completed `36/36` requests successfully with an average latency of `2873.61 ms`.
+
+This reduced average local Ollama/Qwen latency from roughly `3116 ms` to `2874 ms`, about a `7.8%` improvement, while keeping the same `qwen2.5-coder:14b` model.
+
+### Design Decision
+
+I intentionally did **not** switch from `qwen2.5-coder:14b` to a smaller model such as a 7B model. A smaller model would likely reduce latency more, but it would also change the quality/latency tradeoff being measured.
+
+Instead, I kept the same 14B local model and optimized safer application-level factors:
+
+- shorter LLM prompt
+- compact JSON-only response format
+- output-token limit
+- Ollama timeout fallback
+- configurable benchmark rate limits
+
+This makes the benchmark more honest: the latency improvement came from reducing avoidable overhead, not from swapping to a smaller model.
+
+---
+
 ## Testing
 
 The project includes a pytest suite covering unit logic, local persistence, provider selection, and API workflows.
@@ -1013,6 +1048,10 @@ scripts/
   benchmark_latency.py
   run_tests.py
   run_tests.ps1
+docs/
+  assets/
+    analytics-before.png
+    ollama-benchmark-after.png
 scoring.py
 labels.py
 audit_log.py
