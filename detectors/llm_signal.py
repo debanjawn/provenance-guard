@@ -18,24 +18,22 @@ DEFAULT_SIGNAL = {
 DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant"
 DEFAULT_OLLAMA_MODEL = "qwen2.5-coder:14b"
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+DEFAULT_LLM_MAX_OUTPUT_TOKENS = 80
+DEFAULT_OLLAMA_TIMEOUT_SECONDS = 8
 PROVIDER_LABELS = {
     "groq": "Groq cloud",
     "ollama": "Local Ollama/Qwen",
 }
 
 SYSTEM_PROMPT = (
-    "You are an attribution scoring assistant. Review the user's text and estimate how "
-    "AI-like it appears. Return valid JSON only with exactly two fields: "
-    "\"score\" and \"reason\". "
-    "\"score\" must be a number from 0.0 to 1.0 where 0.0 means strongly human-like, "
-    "0.5 means mixed or uncertain, and 1.0 means strongly AI-like. "
-    "Be conservative about false positives. Casual personal writing, informal slang, "
-    "specific lived experience, uneven grammar, emotional phrasing, and idiosyncratic "
-    "wording should generally score lower. Formal or polished writing alone is not "
-    "enough for a high AI score. Do not treat simple vocabulary as AI-like by itself. "
-    "Use scores near 0.5 to 0.7 for uncertain or mixed cases. Only assign 0.8 or higher "
-    "when there are strong signs of generic, templated, overly polished AI-style writing. "
-    "\"reason\" must be a short plain-English explanation."
+    "Judge whether the text appears human-written, AI-generated, or uncertain. "
+    "Return compact JSON only: {\"score\": number from 0 to 1, \"reason\": \"one short sentence\"}. "
+    "Keep the reason under 20 words. "
+    "Use 0 for strongly human-like, 0.5 for uncertain or mixed, and 1 for strongly AI-like. "
+    "Be conservative about false positives; polished writing alone is not enough. "
+    "Assistant preambles such as 'Certainly! Here is...', generic transition-heavy wording, and repeated corporate phrases "
+    "may be evidence of AI generation when they appear together. "
+    "Do not treat merely polished human writing as strong AI evidence."
 )
 
 
@@ -109,6 +107,17 @@ def _normalize_provider_name(provider: str | None) -> str | None:
     return None
 
 
+def _get_env_int(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        parsed_value = int(raw_value)
+    except ValueError:
+        return default
+    return parsed_value if parsed_value > 0 else default
+
+
 def get_default_provider() -> str:
     provider = _normalize_provider_name(os.getenv("LLM_PROVIDER"))
     if provider == "ollama":
@@ -127,6 +136,14 @@ def get_provider_label(provider: str | None) -> str:
     return PROVIDER_LABELS.get(get_effective_provider(provider), PROVIDER_LABELS["groq"])
 
 
+def get_max_output_tokens() -> int:
+    return _get_env_int("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)
+
+
+def get_ollama_timeout_seconds() -> int:
+    return _get_env_int("OLLAMA_TIMEOUT_SECONDS", DEFAULT_OLLAMA_TIMEOUT_SECONDS)
+
+
 def get_groq_signal(text: str) -> dict:
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -135,12 +152,13 @@ def get_groq_signal(text: str) -> dict:
         )
 
     model_name = os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+    max_output_tokens = get_max_output_tokens()
 
     try:
         client = Groq(api_key=api_key)
         response = client.chat.completions.create(
             model=model_name,
-            temperature=0,
+            max_tokens=max_output_tokens,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -160,6 +178,7 @@ def get_groq_signal(text: str) -> dict:
 def get_ollama_signal(text: str) -> dict:
     base_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_BASE_URL).rstrip("/")
     model_name = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    timeout_seconds = get_ollama_timeout_seconds()
     payload = {
         "model": model_name,
         "stream": False,
@@ -167,6 +186,9 @@ def get_ollama_signal(text: str) -> dict:
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": text},
         ],
+        "options": {
+            "num_predict": get_max_output_tokens(),
+        },
     }
 
     request_body = json.dumps(payload).encode("utf-8")
@@ -178,19 +200,19 @@ def get_ollama_signal(text: str) -> dict:
     )
 
     try:
-        with request.urlopen(http_request, timeout=60) as response:
+        with request.urlopen(http_request, timeout=timeout_seconds) as response:
             response_payload = json.loads(response.read().decode("utf-8"))
     except error.URLError:
         return _uncertain_signal(
-            "The local Ollama service could not be reached, so the result is marked uncertain."
+            "Ollama was unavailable, so the result is uncertain."
         )
     except (TimeoutError, OSError):
         return _uncertain_signal(
-            "The local Ollama request failed, so the result is marked uncertain."
+            "Ollama timed out, so the result is uncertain."
         )
     except json.JSONDecodeError:
         return _uncertain_signal(
-            "The Ollama response was not valid JSON, so the result is marked uncertain."
+            "Ollama returned invalid JSON, so the result is uncertain."
         )
 
     try:
@@ -198,7 +220,7 @@ def get_ollama_signal(text: str) -> dict:
         return parse_llm_json_response(raw_content)
     except (KeyError, TypeError, ValueError):
         return _uncertain_signal(
-            "The Ollama attribution response could not be parsed, so the result is marked uncertain."
+            "Ollama returned an invalid attribution result."
         )
 
 
@@ -215,5 +237,6 @@ def get_llm_signal(text: str, provider_override: str | None = None) -> dict:
     latency_ms = int(round((time.perf_counter() - start_time) * 1000))
     return {
         **result,
+        "provider": provider,
         "latency_ms": latency_ms,
     }

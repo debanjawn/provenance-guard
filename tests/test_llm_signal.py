@@ -19,6 +19,7 @@ def test_provider_defaults_to_groq_when_missing(monkeypatch):
     result = llm_signal.get_llm_signal("A real piece of text for routing.")
 
     assert result["reason"] == "groq selected"
+    assert result["provider"] == "groq"
     assert isinstance(result["latency_ms"], int)
     assert llm_signal.get_default_provider() == "groq"
 
@@ -39,6 +40,7 @@ def test_provider_selects_ollama_when_requested(monkeypatch):
     result = llm_signal.get_llm_signal("A real piece of text for routing.")
 
     assert result["reason"] == "ollama selected"
+    assert result["provider"] == "ollama"
     assert isinstance(result["latency_ms"], int)
     assert llm_signal.get_effective_provider("ollama") == "ollama"
 
@@ -54,6 +56,7 @@ def test_invalid_provider_falls_back_to_groq(monkeypatch):
     result = llm_signal.get_llm_signal("A real piece of text for routing.")
 
     assert result["reason"] == "groq fallback"
+    assert result["provider"] == "groq"
     assert isinstance(result["latency_ms"], int)
     assert llm_signal.get_effective_provider("something-else") == "groq"
 
@@ -64,6 +67,12 @@ def test_provider_label_maps_to_user_friendly_text(monkeypatch):
     assert llm_signal.get_provider_label("groq") == "Groq cloud"
     assert llm_signal.get_provider_label("ollama") == "Local Ollama/Qwen"
     assert llm_signal.get_provider_label("default") == "Local Ollama/Qwen"
+
+
+def test_system_prompt_mentions_assistant_style_markers():
+    assert "Certainly! Here is..." in llm_signal.SYSTEM_PROMPT
+    assert "generic transition-heavy wording" in llm_signal.SYSTEM_PROMPT
+    assert "polished human writing" in llm_signal.SYSTEM_PROMPT
 
 
 def test_parse_llm_json_response_handles_clean_json():
@@ -125,6 +134,101 @@ def test_get_ollama_signal_returns_fallback_on_http_failure(monkeypatch):
     assert "Ollama" in result["reason"]
 
 
+def test_get_ollama_signal_uses_output_limit_and_timeout_env(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    monkeypatch.setenv("OLLAMA_MODEL", "qwen2.5-coder:14b")
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "44")
+    monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "9")
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json_bytes
+
+    json_bytes = b'{"message": {"content": "{\\"score\\": 0.4, \\"reason\\": \\"brief result\\"}"}}'
+
+    def fake_urlopen(http_request, timeout):
+        captured["timeout"] = timeout
+        captured["body"] = http_request.data.decode("utf-8")
+        return FakeResponse()
+
+    monkeypatch.setattr(llm_signal.request, "urlopen", fake_urlopen)
+
+    result = llm_signal.get_ollama_signal("A real piece of text for routing.")
+    payload = llm_signal.json.loads(captured["body"])
+
+    assert captured["timeout"] == 9
+    assert payload["options"]["num_predict"] == 44
+    assert result == {
+        "score": 0.4,
+        "reason": "brief result",
+    }
+
+
+def test_get_groq_signal_uses_output_limit_env(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MAX_OUTPUT_TOKENS", "33")
+    captured = {}
+
+    class FakeGroqClient:
+        def __init__(self, api_key):
+            assert api_key == "test-key"
+            self.chat = type("Chat", (), {
+                "completions": type("Completions", (), {
+                    "create": self.create,
+                })()
+            })()
+
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return type("Response", (), {
+                "choices": [
+                    type("Choice", (), {
+                        "message": type("Message", (), {
+                            "content": '{"score": 0.3, "reason": "groq response"}'
+                        })()
+                    })()
+                ]
+            })()
+
+    monkeypatch.setattr(llm_signal, "Groq", FakeGroqClient)
+
+    result = llm_signal.get_groq_signal("A real piece of text for routing.")
+
+    assert captured["max_tokens"] == 33
+    assert "temperature" not in captured
+    assert result == {
+        "score": 0.3,
+        "reason": "groq response",
+    }
+
+
+def test_get_llm_signal_returns_latency_on_ollama_timeout(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    timings = iter([5.0, 5.008])
+    monkeypatch.setattr(llm_signal.time, "perf_counter", lambda: next(timings))
+    monkeypatch.setattr(
+        llm_signal,
+        "get_ollama_signal",
+        lambda text: {"score": 0.5, "reason": "Ollama timed out, so the result is uncertain."},
+    )
+
+    result = llm_signal.get_llm_signal("A real piece of text for routing.")
+
+    assert result == {
+        "score": 0.5,
+        "reason": "Ollama timed out, so the result is uncertain.",
+        "provider": "ollama",
+        "latency_ms": 8,
+    }
+
+
 def test_get_llm_signal_includes_measured_latency(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "groq")
     timings = iter([10.0, 10.1234])
@@ -140,5 +244,6 @@ def test_get_llm_signal_includes_measured_latency(monkeypatch):
     assert result == {
         "score": 0.2,
         "reason": "groq selected",
+        "provider": "groq",
         "latency_ms": 123,
     }

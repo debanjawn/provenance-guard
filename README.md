@@ -54,7 +54,7 @@ The project also includes a lightweight demo frontend so the system can be teste
 - Optional local LLM inference through Ollama/Qwen.
 - Frontend demo/admin provider selector for switching between Groq and local Ollama.
 - SQLite persistence instead of JSON-file audit storage.
-- 52 passing pytest tests covering core logic, latency instrumentation, and API workflows.
+- 60 passing pytest tests covering core logic, latency instrumentation, and API workflows.
 
 ---
 
@@ -328,7 +328,7 @@ It supports:
 
 - selecting the LLM provider for LLM-backed actions
 - submitting text to `POST /submit`
-- viewing attribution, confidence, labels, and individual signal scores
+- viewing attribution, combined confidence, thresholds, calibration details, and individual signal scores
 - viewing which LLM provider was used
 - submitting appeals to `POST /appeal`
 - fetching the audit log from `GET /log`
@@ -441,10 +441,31 @@ Response example:
 ```json
 {
   "attribution": "likely_human",
+  "calibration_summary": {
+    "calibration_rule": null,
+    "calibration_rule_applied": false,
+    "distance_to_likely_ai": 0.4471,
+    "distance_to_likely_human": 0.0,
+    "explanation": "Likely AI requires a high combined score or strong agreement between elevated LLM and predictability signals, so polished writing alone can still remain uncertain.",
+    "weights": {
+      "llm": 0.45,
+      "predictability": 0.25,
+      "stylometric": 0.3
+    }
+  },
+  "classification_thresholds": {
+    "likely_ai_min": 0.75,
+    "likely_human_max": 0.39
+  },
   "confidence": 0.3029,
   "content_id": "0571a271a0c34139b25349fe10fba30b",
   "label": "This text appears more consistent with human-written work based on the signals reviewed. This label is not a guarantee, but the system did not find strong signs of AI generation.",
   "llm_provider": "ollama",
+  "signal_contributions": {
+    "llm": 0.135,
+    "predictability": 0.013,
+    "stylometric": 0.1549
+  },
   "signal_scores": {
     "llm": 0.3,
     "predictability": 0.0521,
@@ -729,6 +750,7 @@ It looks for:
 - repeated phrases
 - common transitions
 - generic AI-style wording
+- assistant-template preambles and corporate phrasing clusters
 - formulaic phrases like “in conclusion,” “it is important to note,” and “plays a crucial role”
 
 Why this signal exists:
@@ -762,14 +784,16 @@ I weighted the LLM signal highest because it gives the broadest judgment of tone
 Thresholds:
 
 ```text
-0.00–0.39 = likely_human
-0.40–0.79 = uncertain
-0.80–1.00 = likely_ai
+0.00-0.39 = likely_human
+0.40-0.74 = uncertain
+0.75-1.00 = likely_ai
 ```
 
 A confidence score of `0.6` means the system found mixed evidence. The text has some AI-like signals, but not enough evidence to label it as likely AI.
 
-The `likely_ai` threshold is intentionally high because a false positive is more harmful than a false negative in a writing platform. A human creator should not be accused of AI generation unless the combined evidence is strong.
+The `likely_ai` threshold remains intentionally conservative because a false positive is more harmful than a false negative in a writing platform. Even with the demo-friendly `0.75` cutoff, likely AI still requires multiple signals to agree. Polished or formulaic writing can remain `uncertain` when one signal is high but the others do not reinforce it strongly enough.
+
+There is one narrow calibration exception for obvious assistant-template cases: if the LLM score is at least `0.80` and the predictability score is at least `0.70`, the result can be lifted to the `0.75` likely-AI floor. This is reported in calibration metadata as `strong_ai_pattern_agreement`, and it still does not treat polished writing alone as AI-generated.
 
 ---
 
@@ -852,7 +876,7 @@ Input type: polished but not extreme AI-like text
 }
 ```
 
-This stayed uncertain because the score did not reach the high `0.80` threshold. This reflects the system’s conservative false-positive design.
+This stayed uncertain because the score did not reach the 0.75 likely-AI threshold with enough total combined evidence. This reflects the system's conservative false-positive design and its requirement that multiple signals agree.
 
 ---
 
@@ -986,10 +1010,24 @@ Run tests with:
 python -m pytest
 ```
 
+Recommended on Windows/local development to avoid locked repo-local pytest temp folders:
+
+```powershell
+python scripts/run_tests.py
+```
+
+PowerShell convenience wrapper:
+
+```powershell
+.\scripts\run_tests.ps1
+```
+
+The helper creates a fresh unique `--basetemp` directory under the OS temp folder for each run, which avoids the Windows locking issue that can happen with reused repo-local `.pytest-tmp*` folders.
+
 Latest verified result:
 
 ```text
-52 passed in 7.75s
+67 passed, 1 warning in 0.49s
 ```
 
 Test coverage includes:
@@ -1032,9 +1070,43 @@ Implemented with:
 GET /analytics
 ```
 
-It returns detection counts, appeal rate, and average confidence.
+It returns detection counts, appeal rate, average confidence, and LLM latency summaries.
 
 The dashboard now also reports logged LLM provider latency so it is easier to compare local Ollama/Qwen inference with Groq cloud inference during demos and evaluation.
+
+### Latency Benchmarking
+
+`llm_latency_ms` measures only provider inference time inside the LLM signal path, not full HTTP request time for `/submit`.
+
+The default `/submit` rate limit is intentionally conservative for normal app behavior.
+
+To compare Groq and local Ollama/Qwen with a broader sample set, run:
+
+```powershell
+python scripts/benchmark_latency.py --provider groq --rounds 3
+python scripts/benchmark_latency.py --provider ollama --rounds 3
+```
+
+The script sends a built-in batch of representative texts to the local Flask app at `http://127.0.0.1:5000/submit`, prints summary latency metrics, and saves timestamped JSON results under `benchmark_results/`.
+
+For local Ollama benchmarking, you can temporarily raise the limit with:
+
+```env
+SUBMIT_RATE_LIMIT=200 per minute;1000 per day
+```
+
+Use that only for local benchmarking, not for public deployment. Ollama benchmarking is free/local, but the results are often hardware-bound.
+
+Example local baseline values observed before these safe prompt/output controls:
+
+- Groq around `621 ms`
+- Ollama/Qwen 14B around `3116 ms`
+
+These numbers vary based on hardware, active model, network conditions, and prompt length. Dashboard screenshots can be added later to show before/after analytics changes.
+
+### Screenshot Plan
+
+Dashboard latency comparison screenshots can be placed in `docs/assets/` as `analytics-before.png` and `analytics-after.png`.
 
 ### Provenance Certificate
 
@@ -1082,7 +1154,7 @@ The audit log uses SQLite instead of JSON-file storage. This gives the project t
 
 Implemented.
 
-The project includes 52 passing pytest tests for core logic and API workflows.
+The project includes 60 passing pytest tests for core logic and API workflows.
 
 ---
 
@@ -1283,3 +1355,6 @@ requirements.txt
 .gitignore
 README.md
 ```
+
+
+

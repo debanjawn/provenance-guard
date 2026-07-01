@@ -46,11 +46,11 @@ function formatPairs(pairs) {
 
     const renderedValue = isObjectValue
       ? `<pre class="result-json">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`
-      : `<div class="result-value">${escapeHtml(value)}</div>`;
+      : renderResultValue(value);
 
     return `
       <div class="result-row">
-        <div class="result-key">${escapeHtml(label)}</div>
+        <div class="result-label result-key">${escapeHtml(label)}</div>
         ${renderedValue}
       </div>
     `;
@@ -73,6 +73,107 @@ function formatLatency(value) {
     return `${value} ms`;
   }
   return "Unavailable";
+}
+
+function formatScore(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toFixed(4);
+  }
+  return "Unavailable";
+}
+
+function formatBoolean(value) {
+  if (value === true) {
+    return "true";
+  }
+  if (value === false) {
+    return "false";
+  }
+  return "Unavailable";
+}
+
+function renderResultValue(value, options = {}) {
+  const { long = false } = options;
+
+  return `<div class="result-value${long ? " result-long-value" : ""}">${escapeHtml(value)}</div>`;
+}
+
+function renderResultRow(label, value, options = {}) {
+  return `
+    <div class="result-row">
+      <div class="result-label result-key">${escapeHtml(label)}</div>
+      ${renderResultValue(value, options)}
+    </div>
+  `;
+}
+
+function buildSubmitResult(data) {
+  const thresholds = data.classification_thresholds || {};
+  const scores = data.signal_scores || {};
+  const contributions = data.signal_contributions || {};
+  const calibration = data.calibration_summary || {};
+
+  return `
+    <section class="submit-report">
+      <div class="summary-band">
+        <div class="summary-chip">
+          <span class="summary-label">Attribution</span>
+          <strong>${escapeHtml(data.attribution)}</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-label">Combined confidence</span>
+          <strong>${escapeHtml(formatScore(data.confidence))}</strong>
+        </div>
+        <div class="summary-chip">
+          <span class="summary-label">Likely AI at</span>
+          <strong>${escapeHtml(formatScore(thresholds.likely_ai_min))}+</strong>
+        </div>
+      </div>
+
+      <div class="result-grid">
+        ${renderResultRow("content_id", data.content_id, { long: true })}
+        ${renderResultRow("label", data.label)}
+        ${renderResultRow("Used LLM Provider", providerLabel(data.llm_provider), { long: true })}
+        ${renderResultRow("LLM latency", formatLatency(data.llm_latency_ms))}
+      </div>
+
+      <section class="calibration-block calibration-card">
+        <h3>Calibration details</h3>
+        <div class="result-grid">
+          ${renderResultRow("likely_human_max", formatScore(thresholds.likely_human_max))}
+          ${renderResultRow("likely_ai_min", formatScore(thresholds.likely_ai_min))}
+          ${renderResultRow("Distance to likely_ai", formatScore(calibration.distance_to_likely_ai))}
+          ${renderResultRow("Calibration rule applied", formatBoolean(calibration.calibration_rule_applied))}
+          ${renderResultRow("Calibration rule", calibration.calibration_rule || "none", { long: true })}
+        </div>
+        <div class="result-row calibration-explanation-row">
+          <div class="result-label result-key">Explanation</div>
+          <p class="result-value result-long-value calibration-explanation">${escapeHtml(calibration.explanation || "")}</p>
+        </div>
+      </section>
+
+      <section class="calibration-block">
+        <h3>Signal breakdown</h3>
+        <div class="signal-breakdown">
+          <article class="signal-card">
+            <span class="signal-name">LLM</span>
+            <strong>${escapeHtml(formatScore(scores.llm))}</strong>
+            <span class="signal-meta">weighted contribution ${escapeHtml(formatScore(contributions.llm))}</span>
+          </article>
+          <article class="signal-card">
+            <span class="signal-name">Stylometric</span>
+            <strong>${escapeHtml(formatScore(scores.stylometric))}</strong>
+            <span class="signal-meta">weighted contribution ${escapeHtml(formatScore(contributions.stylometric))}</span>
+          </article>
+          <article class="signal-card">
+            <span class="signal-name">Predictability</span>
+            <strong>${escapeHtml(formatScore(scores.predictability))}</strong>
+            <span class="signal-meta">weighted contribution ${escapeHtml(formatScore(contributions.predictability))}</span>
+          </article>
+        </div>
+      </section>
+    </section>
+  `;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -116,17 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }),
       });
 
-      setHtml(submitResult, formatPairs([
-        ["content_id", data.content_id],
-        ["attribution", data.attribution],
-        ["confidence", data.confidence],
-        ["label", data.label],
-        ["Used LLM Provider", providerLabel(data.llm_provider)],
-        ["LLM latency", formatLatency(data.llm_latency_ms)],
-        ["signal_scores.llm", data.signal_scores.llm],
-        ["signal_scores.stylometric", data.signal_scores.stylometric],
-        ["signal_scores.predictability", data.signal_scores.predictability],
-      ]));
+      setHtml(submitResult, buildSubmitResult(data));
     } catch (error) {
       setError(submitResult, error.message);
     }

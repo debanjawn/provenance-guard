@@ -65,6 +65,35 @@ def test_llm_provider_route_returns_default_provider_info(monkeypatch, tmp_path)
     }
 
 
+def test_create_app_uses_default_submit_rate_limit(monkeypatch, tmp_path):
+    monkeypatch.delenv("SUBMIT_RATE_LIMIT", raising=False)
+
+    app = _create_test_app(monkeypatch, tmp_path, RATELIMIT_ENABLED=True)
+
+    assert app.config["SUBMIT_RATE_LIMIT"] == "10 per minute;50 per day"
+
+
+def test_create_app_config_can_override_submit_rate_limit(monkeypatch, tmp_path):
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    _stub_submit_detectors(monkeypatch, expected_provider_override=None)
+    app = _create_test_app(
+        monkeypatch,
+        tmp_path,
+        RATELIMIT_ENABLED=True,
+        SUBMIT_RATE_LIMIT="2 per day",
+    )
+    client = app.test_client()
+
+    first = _submit_text(client, creator_id="limit-1", text="first")
+    second = _submit_text(client, creator_id="limit-2", text="second")
+    third = _submit_text(client, creator_id="limit-3", text="third")
+
+    assert app.config["SUBMIT_RATE_LIMIT"] == "2 per day"
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 429
+
+
 def test_submit_without_text_returns_400(monkeypatch, tmp_path):
     client = _create_test_app(monkeypatch, tmp_path).test_client()
 
@@ -150,6 +179,93 @@ def test_submit_request_override_ollama_wins(monkeypatch, tmp_path):
         "stylometric": 0.3,
         "predictability": 0.1,
     }
+    assert payload["classification_thresholds"] == {
+        "likely_human_max": 0.39,
+        "likely_ai_min": 0.75,
+    }
+    assert payload["signal_contributions"] == {
+        "llm": 0.09,
+        "stylometric": 0.09,
+        "predictability": 0.025,
+    }
+    assert payload["calibration_summary"]["calibration_rule_applied"] is False
+    assert payload["calibration_summary"]["calibration_rule"] is None
+    assert "strong agreement between elevated LLM and predictability signals" in payload["calibration_summary"]["explanation"]
+
+
+def test_submit_high_multi_signal_case_returns_likely_ai(monkeypatch, tmp_path):
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+
+    monkeypatch.setattr(
+        app_module,
+        "get_llm_signal",
+        lambda text, provider_override=None: {
+            "score": 0.8,
+            "reason": "stubbed llm",
+            "latency_ms": 88,
+        },
+    )
+    monkeypatch.setattr(
+        app_module,
+        "get_stylometric_signal",
+        lambda text: {"score": 0.75, "reason": "stubbed stylometric", "metrics": {}},
+    )
+    monkeypatch.setattr(
+        app_module,
+        "get_predictability_signal",
+        lambda text: {"score": 0.75, "reason": "stubbed predictability", "metrics": {}},
+    )
+
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
+    response = _submit_text(
+        client,
+        creator_id="creator-high-signal",
+        text="This deliberately mocked high-signal case should cross the likely_ai bar.",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["confidence"] == 0.7725
+    assert payload["attribution"] == "likely_ai"
+    assert payload["classification_thresholds"]["likely_ai_min"] == 0.75
+
+
+def test_submit_strong_ai_pattern_agreement_case_returns_likely_ai(monkeypatch, tmp_path):
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+
+    monkeypatch.setattr(
+        app_module,
+        "get_llm_signal",
+        lambda text, provider_override=None: {
+            "score": 0.8,
+            "reason": "stubbed llm",
+            "latency_ms": 91,
+        },
+    )
+    monkeypatch.setattr(
+        app_module,
+        "get_stylometric_signal",
+        lambda text: {"score": 0.25, "reason": "stubbed stylometric", "metrics": {}},
+    )
+    monkeypatch.setattr(
+        app_module,
+        "get_predictability_signal",
+        lambda text: {"score": 0.72, "reason": "stubbed predictability", "metrics": {}},
+    )
+
+    client = _create_test_app(monkeypatch, tmp_path).test_client()
+    response = _submit_text(
+        client,
+        creator_id="creator-strong-agreement",
+        text="Certainly! Here is a polished and professional response with repeated assistant-style patterns.",
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["confidence"] == 0.75
+    assert payload["attribution"] == "likely_ai"
+    assert payload["calibration_summary"]["calibration_rule_applied"] is True
+    assert payload["calibration_summary"]["calibration_rule"] == "strong_ai_pattern_agreement"
 
 
 def test_appeal_with_valid_content_id_returns_under_review_and_is_visible_in_log(monkeypatch, tmp_path):

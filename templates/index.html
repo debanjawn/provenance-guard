@@ -38,20 +38,22 @@
     </section>
 
     <section class="grid">
-      <article class="card">
+      <article class="card wide submit-card">
         <h2>Text Submission</h2>
-        <form id="submit-form" class="stack">
-          <label>
-            Creator ID
-            <input type="text" name="creator_id" placeholder="creator_123" required>
-          </label>
-          <label>
-            Text
-            <textarea name="text" rows="8" placeholder="Paste text to classify..." required></textarea>
-          </label>
-          <button type="submit">Submit Text</button>
-        </form>
-        <div id="submit-result" class="result"></div>
+        <div class="submit-layout">
+          <form id="submit-form" class="stack">
+            <label>
+              Creator ID
+              <input type="text" name="creator_id" placeholder="creator_123" required>
+            </label>
+            <label>
+              Text
+              <textarea name="text" rows="8" placeholder="Paste text to classify..." required></textarea>
+            </label>
+            <button type="submit">Submit Text</button>
+          </form>
+          <div id="submit-result" class="result"></div>
+        </div>
       </article>
 
       <article class="card">

@@ -27,3 +27,4 @@ provenance_guard.db
 .pytest_cache/
 .pytest-tmp/
 .pytest-tmp-*/
+benchmark_results/

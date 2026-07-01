@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -25,6 +26,9 @@ from labels import generate_label
 from metadata_signal import analyze_metadata
 from scoring import combine_scores
 from verification import verify_creator
+
+DEFAULT_SUBMIT_RATE_LIMIT = "10 per minute;50 per day"
+
 
 def register_routes(app: Flask, limiter: Limiter) -> None:
     @app.get("/")
@@ -93,7 +97,7 @@ def register_routes(app: Flask, limiter: Limiter) -> None:
         })
 
     @app.post("/submit")
-    @limiter.limit("10 per minute;50 per day")
+    @limiter.limit(lambda: app.config["SUBMIT_RATE_LIMIT"])
     def submit():
         payload = request.get_json(silent=True) or {}
         creator_id = payload.get("creator_id")
@@ -106,7 +110,7 @@ def register_routes(app: Flask, limiter: Limiter) -> None:
             }), 400
 
         llm_signal = get_llm_signal(text, provider_override)
-        llm_provider = get_effective_provider(provider_override)
+        llm_provider = llm_signal.get("provider") or get_effective_provider(provider_override)
         llm_latency_ms = llm_signal.get("latency_ms")
         stylometric_signal = get_stylometric_signal(text)
         predictability_signal = get_predictability_signal(text)
@@ -139,7 +143,10 @@ def register_routes(app: Flask, limiter: Limiter) -> None:
             "content_id": content_id,
             "attribution": attribution,
             "confidence": confidence,
+            "classification_thresholds": combined_result["classification_thresholds"],
             "signal_scores": combined_result["signal_scores"],
+            "signal_contributions": combined_result["signal_contributions"],
+            "calibration_summary": combined_result["calibration_summary"],
             "label": generate_label(attribution, confidence),
             "llm_provider": llm_provider,
             "llm_latency_ms": llm_latency_ms,
@@ -177,6 +184,10 @@ def create_app(config: dict | None = None) -> Flask:
     app = Flask(__name__)
     if config:
         app.config.update(config)
+    app.config["SUBMIT_RATE_LIMIT"] = app.config.get(
+        "SUBMIT_RATE_LIMIT",
+        os.getenv("SUBMIT_RATE_LIMIT", DEFAULT_SUBMIT_RATE_LIMIT),
+    )
 
     init_db()
 
