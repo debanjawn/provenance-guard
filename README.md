@@ -1,79 +1,74 @@
 # Provenance Guard
 
-Provenance Guard is a Flask API that evaluates submitted writing using multiple provenance signals, combines those signals into a confidence score, returns a plain-English transparency label, supports creator appeals, and records decisions in a structured audit log.
+![Python](https://img.shields.io/badge/Python-3.14-blue)
+![Flask](https://img.shields.io/badge/Flask-API-black)
+![SQLite](https://img.shields.io/badge/storage-SQLite-lightgrey)
+![Tests](https://img.shields.io/badge/tests-67%20passing-brightgreen)
+![Ollama](https://img.shields.io/badge/local%20LLM-Ollama-green)
+![Groq](https://img.shields.io/badge/cloud%20LLM-Groq-orange)
 
-The project is designed around a writing-platform scenario where falsely labeling a human creator’s work as AI-generated is harmful. Because of that, the scoring and labels are intentionally conservative: middle-range scores become `uncertain` instead of forcing an accusation.
+> **Provenance Guard is an uncertainty-first AI provenance prototype.**  
+> It does not claim to prove authorship. It combines multiple signals, explains uncertainty, logs decisions, and supports creator appeals.
 
-The project also includes a lightweight demo frontend so the system can be tested from a browser instead of only through command-line API requests.
+Provenance Guard is a Flask API and browser demo that evaluates submitted writing using multiple provenance signals, combines those signals into a confidence score, returns a plain-English transparency label, supports creator appeals, and records decisions in a structured SQLite audit log.
 
----
-
-## Rubric Coverage Summary
-
-- Content submission endpoint: `POST /submit`
-- Structured JSON response with attribution, confidence, label, and signal scores
-- Multi-signal pipeline: LLM, stylometric, and predictability signals
-- Confidence scoring with documented weights and thresholds
-- Transparency labels for likely human, uncertain, and likely AI
-- Appeals workflow through `POST /appeal`
-- Appeal status changes to `under_review`
-- Structured audit log through `GET /log`
-- Rate limiting on `POST /submit`
-- Analytics dashboard through `GET /analytics`
-- Provenance certificate through `POST /verify-creator`
-- Structured metadata support through `POST /submit-metadata`
-- Demo frontend at `GET /`
-- Optional Groq cloud inference and local Ollama/Qwen inference
-- SQLite audit persistence
-- Pytest coverage for core logic and API workflows
+The project is designed around a writing-platform scenario where falsely labeling a human creator’s work as AI-generated is harmful. Because of that, the system is intentionally conservative: middle-range scores become `uncertain` instead of forcing an accusation.
 
 ---
 
-## Features
+## Highlights
 
-### Required Features
-
-- `POST /submit` accepts creator text and returns structured JSON.
-- Three detection signals run on each text submission:
-  - LLM signal
-  - Stylometric signal
-  - Predictability signal
-- Confidence scoring combines all signal scores into one final score.
-- Transparency labels change based on the final attribution result.
-- `POST /appeal` lets a creator dispute a classification.
-- `GET /log` returns a structured audit log.
-- Flask-Limiter protects `POST /submit` from request flooding.
-
-### Stretch Features
-
-- Ensemble detection with three distinct signals.
-- `GET /analytics` dashboard metrics.
-- `POST /verify-creator` provenance certificate.
-- `POST /submit-metadata` structured metadata support for non-text content.
-- Demo frontend served at `GET /` for easier testing and walkthroughs.
-- Optional local LLM inference through Ollama/Qwen.
-- Frontend demo/admin provider selector for switching between Groq and local Ollama.
-- SQLite persistence instead of JSON-file audit storage.
-- 60 passing pytest tests covering core logic, latency instrumentation, and API workflows.
+- Multi-signal AI provenance scoring
+- Conservative uncertainty-first labeling
+- Creator appeals workflow
+- SQLite audit logging
+- Groq cloud inference support
+- Local Ollama/Qwen inference support
+- Frontend provider selector for local demos
+- LLM latency instrumentation
+- Groq vs Ollama latency benchmarking script
+- Calibration metadata explaining why a result landed where it did
+- Strong AI-pattern agreement rule for obvious assistant-template text
+- Browser demo frontend
+- 67 passing pytest tests
 
 ---
 
-## Tech Stack
+## Demo Preview
 
-- Python
-- Flask
-- Flask-Limiter
-- Groq API
-- Ollama local inference
-- Qwen local model support through Ollama
-- python-dotenv
-- HTML/CSS/JavaScript frontend
-- SQLite persistence through Python’s built-in `sqlite3`
-- pytest
+The frontend lets you test the full system visually instead of only through API calls.
+
+It shows:
+
+- attribution result
+- combined confidence
+- likely-AI threshold
+- content ID
+- transparency label
+- LLM provider used
+- LLM latency
+- calibration details
+- signal scores
+- weighted signal contributions
+
+Screenshots can be added later under:
+
+```text
+docs/assets/frontend-classification.png
+docs/assets/analytics-dashboard.png
+```
+
+Then referenced with:
+
+```md
+![Classification demo](docs/assets/frontend-classification.png)
+
+![Analytics dashboard](docs/assets/analytics-dashboard.png)
+```
 
 ---
 
-## Setup
+## Quickstart
 
 Clone the repo:
 
@@ -106,11 +101,13 @@ GROQ_MODEL=llama-3.1-8b-instant
 
 OLLAMA_MODEL=qwen2.5-coder:14b
 OLLAMA_BASE_URL=http://localhost:11434
+
+LLM_MAX_OUTPUT_TOKENS=80
+OLLAMA_TIMEOUT_SECONDS=8
+SUBMIT_RATE_LIMIT=10 per minute;50 per day
 ```
 
-The repo includes `.env.example` as a safe template. Do not commit your real `.env`.
-
-Local audit entries are stored in `provenance_guard.db`, which is created automatically when the app starts. The project originally used `audit_log.json` for prototype storage, but SQLite is used now to reduce the risk of lost audit entries under concurrent writes.
+The repo includes `.env.example` as a safe template. Do **not** commit your real `.env`.
 
 Run the app:
 
@@ -118,13 +115,7 @@ Run the app:
 python app.py
 ```
 
-The API runs locally at:
-
-```text
-http://127.0.0.1:5000
-```
-
-The demo frontend runs at:
+Open the frontend:
 
 ```text
 http://127.0.0.1:5000/
@@ -144,6 +135,102 @@ Expected response:
   "status": "ok"
 }
 ```
+
+---
+
+## What the System Does
+
+A text submission goes through three signals:
+
+1. **LLM signal**  
+   Uses Groq cloud inference or local Ollama/Qwen inference to judge whether the writing appears human-like, AI-like, or uncertain.
+
+2. **Stylometric signal**  
+   Measures structural writing features such as sentence length variance, vocabulary diversity, punctuation density, and repetition.
+
+3. **Predictability signal**  
+   Detects formulaic wording, generic transitions, assistant-template phrasing, and repeated high-probability phrases.
+
+The system then combines those scores into a final confidence value and returns one of three labels:
+
+```text
+likely_human
+uncertain
+likely_ai
+```
+
+The goal is not to “catch” people. The goal is to provide an explainable, appealable provenance signal.
+
+---
+
+## Architecture
+
+### Application Factory
+
+The Flask app uses an application factory pattern:
+
+```text
+create_app(config=None)
+```
+
+This makes the app easier to test because each test can create an isolated app instance with its own temporary configuration.
+
+### Submission Flow
+
+```text
+POST /submit
+(raw JSON: creator_id, text, optional llm_provider)
+        ↓
+app.py validates input
+        ↓
+Generate content_id
+        ↓
+detectors/llm_signal.py
+        ↓
+detectors/stylometric_signal.py
+        ↓
+detectors/predictability_signal.py
+        ↓
+scoring.py combines weighted signals
+        ↓
+labels.py creates plain-English transparency label
+        ↓
+audit_log.py stores decision in SQLite
+        ↓
+JSON response with attribution, confidence, label, scores, latency, and calibration metadata
+```
+
+### Appeal Flow
+
+```text
+POST /appeal
+(raw JSON: content_id, creator_reasoning)
+        ↓
+Validate appeal request
+        ↓
+Find original submission
+        ↓
+Record appeal with status under_review
+        ↓
+Store appeal in SQLite audit log
+        ↓
+Return appeal confirmation
+```
+
+---
+
+## Tech Stack
+
+- Python
+- Flask
+- Flask-Limiter
+- Groq API
+- Ollama local inference
+- Qwen local model support through Ollama
+- python-dotenv
+- HTML/CSS/JavaScript frontend
+- SQLite through Python’s built-in `sqlite3`
+- pytest
 
 ---
 
@@ -167,32 +254,21 @@ If `LLM_PROVIDER` is missing or invalid, the app defaults to Groq.
 
 ### Groq Cloud Inference
 
-To use Groq:
-
 ```env
 LLM_PROVIDER=groq
 GROQ_API_KEY=your_actual_groq_key_here
 GROQ_MODEL=llama-3.1-8b-instant
 ```
 
-Then run:
-
-```powershell
-python app.py
-```
-
 ### Local Ollama/Qwen Inference
 
-To use local Ollama/Qwen inference:
-
-1. Install and run Ollama.
-2. Pull the model:
+Install and run Ollama, then pull the model:
 
 ```powershell
 ollama pull qwen2.5-coder:14b
 ```
 
-3. Configure `.env`:
+Configure `.env`:
 
 ```env
 LLM_PROVIDER=ollama
@@ -200,17 +276,11 @@ OLLAMA_MODEL=qwen2.5-coder:14b
 OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-4. Run the app:
+This allows the LLM signal to run locally instead of sending the LLM prompt to a cloud provider.
 
-```powershell
-python app.py
-```
+### Provider Selector
 
-This allows the LLM signal to run locally through Ollama instead of sending the LLM prompt to Groq.
-
-### Frontend Provider Selector
-
-The demo frontend includes a global admin-style provider selector labeled:
+The demo frontend includes a provider selector labeled:
 
 ```text
 AI Provider for LLM-backed actions
@@ -222,7 +292,7 @@ Options:
 - Groq cloud
 - Local Ollama/Qwen
 
-This selector is intended for local demos and interviews. It does not expose API keys or secret values. It currently affects text classification through `POST /submit`, because that is the feature that uses the LLM signal. Other routes like appeals, analytics, audit logs, verification, and metadata scoring do not currently call an LLM.
+This selector is intended for local demos and interviews. It does not expose API keys or secret values.
 
 The app also exposes a safe non-secret endpoint:
 
@@ -241,130 +311,23 @@ Example response:
 
 ---
 
-## Architecture
-
-### Post-Feedback Improvements
-
-- The Flask app now uses an application factory pattern through `create_app()`.
-- Tests create isolated app instances with temporary configuration instead of reloading the `app` module.
-- SQLite is initialized once at startup, and `audit_log.py` operations now run against that initialized database instead of defensively calling `init_db()` on every operation.
-- This makes configuration and tests more predictable and aligns the project more closely with common production Flask patterns.
-
-### Submission Flow
-
-```text
-POST /submit
-(raw JSON: creator_id, text, optional llm_provider)
-        ↓
-app.py validates input
-(validated creator_id + raw text + provider selection)
-        ↓
-Generate content_id
-(content_id + creator_id + raw text)
-        ↓
-detectors/llm_signal.py
-(raw text + provider selection → llm_score + llm_reason)
-        ↓
-detectors/stylometric_signal.py
-(raw text → stylometric_score + metrics)
-        ↓
-detectors/predictability_signal.py
-(raw text → predictability_score + metrics)
-        ↓
-scoring.py
-(llm_score + stylometric_score + predictability_score → combined confidence + attribution)
-        ↓
-labels.py
-(attribution + confidence → transparency label text)
-        ↓
-audit_log.py
-(content_id + creator_id + signal scores + confidence + attribution + label + status)
-        ↓
-SQLite database
-(provenance_guard.db)
-        ↓
-JSON response
-(content_id + attribution + confidence + signal_scores + label + status + llm_provider)
-```
-
-### Appeal Flow
-
-```text
-POST /appeal
-(raw JSON: content_id, creator_reasoning)
-        ↓
-app.py validates appeal request
-(validated content_id + creator reasoning)
-        ↓
-Find original submission
-(original classification + confidence + status)
-        ↓
-Update status
-(status → under_review)
-        ↓
-audit_log.py
-(content_id + original classification + appeal reasoning + updated status)
-        ↓
-SQLite database
-(provenance_guard.db)
-        ↓
-JSON response
-(content_id + status + confirmation message)
-```
-
----
-
-## Demo Frontend
-
-The project includes a dependency-free frontend served by Flask at:
-
-```text
-GET /
-```
-
-The frontend makes the project easier to demo without manually typing every request in PowerShell or curl.
-
-It supports:
-
-- selecting the LLM provider for LLM-backed actions
-- submitting text to `POST /submit`
-- viewing attribution, combined confidence, thresholds, calibration details, and individual signal scores
-- viewing which LLM provider was used
-- submitting appeals to `POST /appeal`
-- fetching the audit log from `GET /log`
-- fetching analytics from `GET /analytics`
-- verifying a creator through `POST /verify-creator`
-- submitting structured metadata through `POST /submit-metadata`
-
-The frontend uses plain HTML, CSS, and JavaScript:
-
-```text
-templates/index.html
-static/style.css
-static/script.js
-```
-
-It does not expose secrets. It only sends safe provider values such as `default`, `groq`, or `ollama`.
-
----
-
 ## API Endpoints
 
 ### `GET /`
 
 Serves the browser demo frontend.
 
-Open:
-
 ```text
 http://127.0.0.1:5000/
 ```
 
-Use this page to test the main features visually:
+The frontend supports:
 
 - text submission
 - LLM provider selection
 - transparency label output
+- calibration details
+- signal breakdown
 - appeal submission
 - audit log viewing
 - analytics
@@ -376,8 +339,6 @@ Use this page to test the main features visually:
 ### `GET /health`
 
 Returns a simple health check.
-
-Response:
 
 ```json
 {
@@ -392,16 +353,12 @@ Response:
 
 Returns safe, non-secret information about the default LLM provider.
 
-Example response:
-
 ```json
 {
   "default_provider": "ollama",
   "default_provider_label": "Local Ollama/Qwen"
 }
 ```
-
-This endpoint does not expose API keys or `.env` contents.
 
 ---
 
@@ -418,7 +375,7 @@ Request:
 }
 ```
 
-Optional provider override for local demo use:
+Optional provider override:
 
 ```json
 {
@@ -436,42 +393,43 @@ groq
 ollama
 ```
 
-Response example:
+Example response:
 
 ```json
 {
-  "attribution": "likely_human",
+  "attribution": "likely_ai",
+  "confidence": 0.75,
+  "content_id": "ab7448fc8fff4fd0b7919fcafed116cd",
+  "label": "This text shows strong signs of AI generation based on multiple signals, but this is not a final judgment. The creator may appeal this label.",
+  "llm_provider": "ollama",
+  "llm_latency_ms": 5728,
+  "status": "classified",
+  "classification_thresholds": {
+    "likely_human_max": 0.39,
+    "likely_ai_min": 0.75
+  },
+  "signal_scores": {
+    "llm": 0.8,
+    "stylometric": 0.2564,
+    "predictability": 0.8903
+  },
+  "signal_contributions": {
+    "llm": 0.36,
+    "stylometric": 0.0769,
+    "predictability": 0.2226
+  },
   "calibration_summary": {
-    "calibration_rule": null,
-    "calibration_rule_applied": false,
-    "distance_to_likely_ai": 0.4471,
+    "distance_to_likely_ai": 0.0,
     "distance_to_likely_human": 0.0,
+    "calibration_rule_applied": true,
+    "calibration_rule": "strong_ai_pattern_agreement",
     "explanation": "Likely AI requires a high combined score or strong agreement between elevated LLM and predictability signals, so polished writing alone can still remain uncertain.",
     "weights": {
       "llm": 0.45,
-      "predictability": 0.25,
-      "stylometric": 0.3
+      "stylometric": 0.3,
+      "predictability": 0.25
     }
-  },
-  "classification_thresholds": {
-    "likely_ai_min": 0.75,
-    "likely_human_max": 0.39
-  },
-  "confidence": 0.3029,
-  "content_id": "0571a271a0c34139b25349fe10fba30b",
-  "label": "This text appears more consistent with human-written work based on the signals reviewed. This label is not a guarantee, but the system did not find strong signs of AI generation.",
-  "llm_provider": "ollama",
-  "signal_contributions": {
-    "llm": 0.135,
-    "predictability": 0.013,
-    "stylometric": 0.1549
-  },
-  "signal_scores": {
-    "llm": 0.3,
-    "predictability": 0.0521,
-    "stylometric": 0.5164
-  },
-  "status": "classified"
+  }
 }
 ```
 
@@ -506,31 +464,23 @@ Response:
 
 Returns structured audit log entries from SQLite.
 
-Example appeal-related log entries:
+Example:
 
 ```json
 [
   {
     "attribution": "likely_ai",
-    "confidence": 0.8409,
-    "content_id": "18c3ffe225dc4e7884dcf9cbc8e4494d",
-    "creator_id": "label-test-ai-extreme",
+    "confidence": 0.75,
+    "content_id": "ab7448fc8fff4fd0b7919fcafed116cd",
+    "creator_id": "final-ai-test",
     "entry_type": "classification",
-    "llm_score": 0.9,
-    "predictability_score": 0.9405,
+    "llm_score": 0.8,
+    "predictability_score": 0.8903,
+    "stylometric_score": 0.2564,
+    "llm_provider": "ollama",
+    "llm_latency_ms": 5728,
     "status": "classified",
-    "stylometric_score": 0.6693,
-    "timestamp": "2026-06-28T07:17:26.279155+00:00"
-  },
-  {
-    "appeal_reasoning": "I wrote this myself from personal experience. My writing style may appear more formal than typical.",
-    "content_id": "18c3ffe225dc4e7884dcf9cbc8e4494d",
-    "creator_id": "label-test-ai-extreme",
-    "entry_type": "appeal",
-    "original_attribution": "likely_ai",
-    "original_confidence": 0.8409,
-    "status": "under_review",
-    "timestamp": "2026-06-28T07:21:00.589534+00:00"
+    "timestamp": "2026-06-29T18:45:00+00:00"
   }
 ]
 ```
@@ -548,6 +498,10 @@ Example response:
   "appeal_count": 1,
   "appeal_rate": 0.0417,
   "average_confidence": 0.5551,
+  "average_llm_latency_ms": 2874,
+  "average_llm_latency_by_provider": {
+    "ollama": 2874
+  },
   "likely_ai_count": 1,
   "likely_human_count": 6,
   "total_submissions": 24,
@@ -606,28 +560,6 @@ Human-process metadata example:
 }
 ```
 
-Response:
-
-```json
-{
-  "content_id": "702964ac12984254baa3bbcc1ab84a21",
-  "content_type": "image_metadata",
-  "creator_id": "metadata-human",
-  "metadata_attribution": "likely_human_process",
-  "metadata_checks": {
-    "declared_ai_assistance": false,
-    "edit_history_available": true,
-    "has_process_notes": true,
-    "human_reviewed": true,
-    "tool_flagged_as_ai": false,
-    "tool_used": "Photoshop"
-  },
-  "provenance_score": 0.0,
-  "reason": "The metadata shows stronger signs of human process documentation than AI-assisted creation.",
-  "status": "classified"
-}
-```
-
 AI-assisted metadata example:
 
 ```json
@@ -644,33 +576,11 @@ AI-assisted metadata example:
 }
 ```
 
-Response:
-
-```json
-{
-  "content_id": "34ac5265d3144cfa81b75612f439064f",
-  "content_type": "image_metadata",
-  "creator_id": "metadata-ai",
-  "metadata_attribution": "likely_ai_assisted",
-  "metadata_checks": {
-    "declared_ai_assistance": true,
-    "edit_history_available": false,
-    "has_process_notes": false,
-    "human_reviewed": false,
-    "tool_flagged_as_ai": true,
-    "tool_used": "Midjourney"
-  },
-  "provenance_score": 1.0,
-  "reason": "The metadata indicates stronger signs of AI-assisted creation than human-process evidence.",
-  "status": "classified"
-}
-```
-
 ---
 
 ## Detection Signals
 
-The system uses three distinct signals. Each signal returns a score from `0.0` to `1.0`, where higher means more AI-like.
+Each signal returns a score from `0.0` to `1.0`, where higher means more AI-like.
 
 ### 1. LLM Signal
 
@@ -680,9 +590,9 @@ File:
 detectors/llm_signal.py
 ```
 
-The LLM signal uses Groq by default and can optionally call a local Ollama model. In both cases, it asks for a structured assessment with a `score` and `reason`.
+The LLM signal uses Groq by default and can optionally call a local Ollama model. It asks for a compact JSON assessment with a `score` and `reason`.
 
-It measures:
+It considers:
 
 - tone
 - flow
@@ -690,21 +600,16 @@ It measures:
 - semantic coherence
 - polish
 - whether the writing feels natural or templated
+- assistant-style preambles and generic transition-heavy wording
 
-The LLM parser handles:
+The parser handles:
 
 - clean JSON
 - JSON inside markdown code fences
 - extra text before or after a JSON object
-- invalid or missing scores through safe fallback behavior
+- invalid or missing scores through fallback behavior
 
-Why this signal exists:
-
-The LLM can make a broad, holistic judgment about the text. It can notice overall style and semantic patterns that simple metrics may miss.
-
-Blind spot:
-
-The LLM may over-score formal human writing, academic writing, or professionally edited writing. Because of that, the project does not allow the LLM signal to fully decide the final result by itself.
+The LLM cannot decide the final result by itself. Its score is one part of the ensemble.
 
 ---
 
@@ -725,13 +630,7 @@ It uses metrics such as:
 - punctuation density
 - repetition rate
 
-Why this signal exists:
-
-AI-generated writing can be smoother and more uniform. Human writing often has more variation in sentence length, punctuation, and word choice.
-
-Blind spot:
-
-Polished human writing, resumes, academic paragraphs, and some creative writing can also look uniform. This means stylometrics can misread genre or style as AI evidence.
+AI-generated writing can be smooth and uniform, but polished human writing can also look uniform. This is why stylometrics are only one signal.
 
 ---
 
@@ -750,22 +649,17 @@ It looks for:
 - repeated phrases
 - common transitions
 - generic AI-style wording
-- assistant-template preambles and corporate phrasing clusters
+- assistant-template preambles
+- corporate phrasing clusters
 - formulaic phrases like “in conclusion,” “it is important to note,” and “plays a crucial role”
 
-Why this signal exists:
-
-AI-generated text often uses safe, common, high-probability phrasing. A predictability signal helps catch writing that is not just polished, but also templated.
-
-Blind spot:
-
-Predictable writing is not automatically AI-generated. Student essays, business memos, and formal explanations often use predictable phrasing because that is normal for the genre.
+Predictable writing is not automatically AI-generated. Student essays, business memos, and formal explanations may use predictable phrasing because that is normal for the genre.
 
 ---
 
 ## Confidence Scoring
 
-The final confidence score is a weighted average:
+The final confidence score starts as a weighted average:
 
 ```text
 combined_score = (0.45 * llm_score) + (0.30 * stylometric_score) + (0.25 * predictability_score)
@@ -779,8 +673,6 @@ Stylometric signal:      30%
 Predictability signal:   25%
 ```
 
-I weighted the LLM signal highest because it gives the broadest judgment of tone and semantic style. The stylometric signal gets 30% because it provides measurable structural evidence. The predictability signal gets 25% because formulaic wording is useful evidence, but predictable writing alone is not proof of AI generation.
-
 Thresholds:
 
 ```text
@@ -789,100 +681,96 @@ Thresholds:
 0.75-1.00 = likely_ai
 ```
 
-A confidence score of `0.6` means the system found mixed evidence. The text has some AI-like signals, but not enough evidence to label it as likely AI.
+The `likely_ai` threshold is intentionally conservative because a false positive is more harmful than a false negative in a writing platform. Even with the demo-friendly `0.75` cutoff, likely AI still requires multiple signals to agree.
 
-The `likely_ai` threshold remains intentionally conservative because a false positive is more harmful than a false negative in a writing platform. Even with the demo-friendly `0.75` cutoff, likely AI still requires multiple signals to agree. Polished or formulaic writing can remain `uncertain` when one signal is high but the others do not reinforce it strongly enough.
+### Strong AI-Pattern Agreement Rule
 
-There is one narrow calibration exception for obvious assistant-template cases: if the LLM score is at least `0.80` and the predictability score is at least `0.70`, the result can be lifted to the `0.75` likely-AI floor. This is reported in calibration metadata as `strong_ai_pattern_agreement`, and it still does not treat polished writing alone as AI-generated.
+There is one narrow calibration rule for obvious assistant-template cases:
+
+```text
+if llm_score >= 0.80 and predictability_score >= 0.70:
+    lift final score to at least 0.75
+```
+
+This rule is reported in calibration metadata as:
+
+```text
+strong_ai_pattern_agreement
+```
+
+It does **not** trigger from the LLM alone. It requires agreement between the LLM signal and the predictability signal.
 
 ---
 
 ## Scoring Examples
 
-### Lower-confidence / human-like case
-
-Input type: casual personal writing
+### Casual Human-Like Case
 
 ```json
 {
   "attribution": "likely_human",
-  "confidence": 0.3029,
+  "confidence": 0.1726,
   "signal_scores": {
-    "llm": 0.3,
-    "predictability": 0.0521,
-    "stylometric": 0.5164
+    "llm": 0.0,
+    "predictability": 0.029,
+    "stylometric": 0.551
+  },
+  "calibration_summary": {
+    "calibration_rule_applied": false,
+    "calibration_rule": null
   }
 }
 ```
 
-This scored low because the text had personal experience, casual phrasing, and low predictability. The stylometric score was moderate, but the LLM and predictability signals pulled the combined score down.
+This stays likely human because the LLM and predictability scores are low.
 
 ---
 
-### Higher-confidence / AI-like case
-
-Input type: extremely formulaic AI-style writing
+### Obvious AI-Template Case
 
 ```json
 {
   "attribution": "likely_ai",
-  "confidence": 0.8409,
-  "signal_scores": {
-    "llm": 0.9,
-    "predictability": 0.9405,
-    "stylometric": 0.6693
-  }
-}
-```
-
-This scored high because multiple signals agreed: the LLM judged it AI-like, the predictability signal found repeated formulaic phrasing, and the stylometric signal was also elevated.
-
----
-
-### Local Ollama/Qwen Case
-
-Input type: formulaic AI-style writing using local Ollama/Qwen
-
-```json
-{
-  "attribution": "uncertain",
-  "confidence": 0.5652,
-  "llm_provider": "ollama",
-  "signal_scores": {
-    "llm": 0.6,
-    "predictability": 0.6466,
-    "stylometric": 0.4451
-  }
-}
-```
-
-This confirms the same `/submit` endpoint can use local Ollama/Qwen for the LLM signal while preserving the same API response shape.
-
----
-
-### Uncertain case
-
-Input type: polished but not extreme AI-like text
-
-```json
-{
-  "attribution": "uncertain",
-  "confidence": 0.7146,
+  "confidence": 0.75,
   "signal_scores": {
     "llm": 0.8,
-    "predictability": 0.7506,
-    "stylometric": 0.5564
+    "predictability": 0.8903,
+    "stylometric": 0.2564
+  },
+  "calibration_summary": {
+    "calibration_rule_applied": true,
+    "calibration_rule": "strong_ai_pattern_agreement"
   }
 }
 ```
 
-This stayed uncertain because the score did not reach the 0.75 likely-AI threshold with enough total combined evidence. This reflects the system's conservative false-positive design and its requirement that multiple signals agree.
+This reaches likely AI because the LLM and predictability detector agree that the text has strong assistant-template patterns.
+
+---
+
+### Uncertain Case
+
+```json
+{
+  "attribution": "uncertain",
+  "confidence": 0.5756,
+  "signal_scores": {
+    "llm": 0.8,
+    "predictability": 0.5548,
+    "stylometric": 0.2564
+  },
+  "calibration_summary": {
+    "calibration_rule_applied": false,
+    "calibration_rule": null
+  }
+}
+```
+
+This remains uncertain because one signal is high, but the supporting evidence is not strong enough.
 
 ---
 
 ## Transparency Labels
-
-The system returns one of three plain-English labels.
 
 ### Likely Human
 
@@ -929,39 +817,6 @@ A human reviewer would be able to see:
 
 ---
 
-## Rate Limiting
-
-The `/submit` endpoint is rate-limited with Flask-Limiter:
-
-```text
-10 per minute;50 per day
-```
-
-I chose `10 per minute` because a real writer may submit several drafts quickly while revising, but more than 10 submissions in a minute likely indicates automated abuse or flooding.
-
-I chose `50 per day` because it is enough for normal writing and revision workflows while limiting large-scale automated use of the API.
-
-Rate-limit test output:
-
-```text
-200
-200
-200
-200
-200
-200
-200
-200
-200
-200
-429
-429
-```
-
-The first 10 rapid `POST /submit` requests succeeded. The 11th and 12th returned `429`, confirming the 10-per-minute limit works.
-
----
-
 ## Audit Log
 
 The audit log is stored in a local SQLite database and returned through the API as structured JSON.
@@ -978,6 +833,8 @@ Submission entries include:
 - LLM score
 - stylometric score
 - predictability score
+- LLM provider
+- LLM latency
 - status
 - entry type
 
@@ -992,11 +849,86 @@ Appeal entries include:
 - status: `under_review`
 - entry type
 
-The log can be viewed with:
+---
+
+## Analytics Dashboard
+
+The analytics dashboard is available through:
+
+```text
+GET /analytics
+```
+
+It reports:
+
+- total submissions
+- likely human count
+- uncertain count
+- likely AI count
+- appeal count
+- appeal rate
+- average confidence
+- average LLM latency
+- provider-specific average LLM latency
+
+This makes it easier to inspect how the system behaves over time and compare Groq cloud inference with local Ollama/Qwen inference.
+
+---
+
+## Rate Limiting
+
+The `/submit` endpoint is rate-limited with Flask-Limiter.
+
+Default:
+
+```text
+10 per minute;50 per day
+```
+
+This protects the app from request flooding while still allowing normal writing and revision workflows.
+
+For local benchmarking only, the limit can be temporarily raised:
+
+```env
+SUBMIT_RATE_LIMIT=200 per minute;1000 per day
+```
+
+Do not use the relaxed benchmark limit for public deployment.
+
+---
+
+## Latency Benchmarking
+
+`llm_latency_ms` measures only provider inference time inside the LLM signal path, not full HTTP request time for `/submit`.
+
+To compare Groq and local Ollama/Qwen with a broader sample set, run the Flask app first:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:5000/log
+python app.py
 ```
+
+Then run:
+
+```powershell
+python scripts/benchmark_latency.py --provider groq --rounds 3
+python scripts/benchmark_latency.py --provider ollama --rounds 3
+```
+
+The script sends a built-in batch of representative texts to the local Flask app, prints summary latency metrics, and saves timestamped JSON results under:
+
+```text
+benchmark_results/
+```
+
+`benchmark_results/` is gitignored.
+
+Example local baseline values observed during development:
+
+- Groq around `621 ms`
+- Ollama/Qwen 14B around `3116 ms`
+- Ollama/Qwen 14B after prompt/output controls around `2874 ms`
+
+These values vary based on hardware, active model, network conditions, and prompt length.
 
 ---
 
@@ -1010,7 +942,7 @@ Run tests with:
 python -m pytest
 ```
 
-Recommended on Windows/local development to avoid locked repo-local pytest temp folders:
+Recommended on Windows/local development:
 
 ```powershell
 python scripts/run_tests.py
@@ -1022,7 +954,7 @@ PowerShell convenience wrapper:
 .\scripts\run_tests.ps1
 ```
 
-The helper creates a fresh unique `--basetemp` directory under the OS temp folder for each run, which avoids the Windows locking issue that can happen with reused repo-local `.pytest-tmp*` folders.
+The helper creates a fresh unique `--basetemp` directory under the OS temp folder for each run, avoiding Windows file-lock issues with reused repo-local `.pytest-tmp*` folders.
 
 Latest verified result:
 
@@ -1033,14 +965,14 @@ Latest verified result:
 Test coverage includes:
 
 - scoring thresholds and weighted formula
+- strong AI-pattern calibration rule
 - transparency label selection
 - stylometric detector output shape and bounds
-- predictability detector output shape and ranking behavior
+- predictability detector output shape and AI-template ranking behavior
 - metadata provenance scoring
 - SQLite audit log initialization, writes, reads, and appeal entries
-- lightweight SQLite write workflow checks
 - LLM provider selection for Groq and Ollama
-- robust LLM JSON parsing, including markdown-fenced JSON
+- robust LLM JSON parsing
 - Ollama fallback behavior without requiring a real Ollama call
 - Flask route smoke tests
 - `/submit` provider override behavior
@@ -1050,277 +982,11 @@ Test coverage includes:
 - `/verify-creator` route behavior
 - `/submit-metadata` route behavior
 
-The tests avoid real Groq and Ollama network calls by using monkeypatching/stubs where needed.
+The tests avoid real Groq and Ollama network calls by using monkeypatching and stubs.
 
 ---
 
-## Stretch Goals
-
-### Ensemble Detection
-
-Implemented.
-
-The system uses three distinct detection signals and combines them with documented weights.
-
-### Analytics Dashboard
-
-Implemented with:
-
-```text
-GET /analytics
-```
-
-It returns detection counts, appeal rate, average confidence, and LLM latency summaries.
-
-The dashboard now also reports logged LLM provider latency so it is easier to compare local Ollama/Qwen inference with Groq cloud inference during demos and evaluation.
-
-### Latency Benchmarking
-
-`llm_latency_ms` measures only provider inference time inside the LLM signal path, not full HTTP request time for `/submit`.
-
-The default `/submit` rate limit is intentionally conservative for normal app behavior.
-
-To compare Groq and local Ollama/Qwen with a broader sample set, run:
-
-```powershell
-python scripts/benchmark_latency.py --provider groq --rounds 3
-python scripts/benchmark_latency.py --provider ollama --rounds 3
-```
-
-The script sends a built-in batch of representative texts to the local Flask app at `http://127.0.0.1:5000/submit`, prints summary latency metrics, and saves timestamped JSON results under `benchmark_results/`.
-
-For local Ollama benchmarking, you can temporarily raise the limit with:
-
-```env
-SUBMIT_RATE_LIMIT=200 per minute;1000 per day
-```
-
-Use that only for local benchmarking, not for public deployment. Ollama benchmarking is free/local, but the results are often hardware-bound.
-
-Example local baseline values observed before these safe prompt/output controls:
-
-- Groq around `621 ms`
-- Ollama/Qwen 14B around `3116 ms`
-
-These numbers vary based on hardware, active model, network conditions, and prompt length. Dashboard screenshots can be added later to show before/after analytics changes.
-
-### Screenshot Plan
-
-Dashboard latency comparison screenshots can be placed in `docs/assets/` as `analytics-before.png` and `analytics-after.png`.
-
-### Provenance Certificate
-
-Implemented with:
-
-```text
-POST /verify-creator
-```
-
-This creates a verified creator certificate label that is separate from the normal transparency label.
-
-### Multi-Modal Support
-
-Implemented with:
-
-```text
-POST /submit-metadata
-```
-
-This supports non-text structured metadata such as declared AI assistance, tool used, process notes, edit history, and human review status.
-
-### Demo Frontend
-
-Implemented with:
-
-```text
-GET /
-```
-
-The frontend provides a simple browser interface for the main system features. It helps demonstrate the project by letting a user submit text, view labels and scores, submit appeals, inspect the audit log, view analytics, verify creators, and test structured metadata without manually writing API requests.
-
-### Local LLM Provider Support
-
-Implemented.
-
-The LLM signal can use either Groq cloud inference or local Ollama/Qwen inference. The default provider is controlled through `.env`, and the frontend includes a local demo/admin selector for switching providers during interviews or demos.
-
-### SQLite Persistence
-
-Implemented.
-
-The audit log uses SQLite instead of JSON-file storage. This gives the project transactional local persistence while keeping it lightweight.
-
-### Test Suite
-
-Implemented.
-
-The project includes 60 passing pytest tests for core logic and API workflows.
-
----
-
-## Known Limitations
-
-This system is a prototype and should not be treated as a reliable AI detector.
-
-Specific limitations:
-
-1. **Formal human writing may be over-scored.**  
-   Academic essays, business memos, and resumes can be polished and predictable, which may raise the stylometric and predictability scores even when the writing is human.
-
-2. **Creative repetition can be misread.**  
-   A poem or stylistic piece that repeats simple phrases may look formulaic to the predictability signal even if the repetition is intentional.
-
-3. **Very short text has weak evidence.**  
-   One or two sentences may not provide enough information for stylometric or predictability metrics to be meaningful.
-
-4. **Edited AI text may become uncertain.**  
-   If a person heavily edits AI-generated text, the human variation may lower the score and move the result into the uncertain range.
-
-5. **The LLM signal is not proof.**  
-   Groq and Ollama provide judgments, not ground truth. That is why the system uses multiple signals and conservative thresholds.
-
-6. **Provider selection is for local demo/admin use.**  
-   The frontend provider selector is useful for demos, but in a real deployed system, provider configuration would likely be controlled by deployment settings or admin-only controls.
-
-7. **SQLite is lightweight, not a full production database setup.**  
-   SQLite is a good upgrade over JSON-file storage for this local prototype, but a larger deployed system would likely use PostgreSQL or another production database.
-
-If this were deployed for real users, I would add stronger calibration, human review tools, authenticated audit access, larger validation sets, stricter access controls, and clearer creator-facing explanations.
-
----
-
-## Spec Reflection
-
-The planning spec helped guide the implementation because it defined the expected API shapes, signal outputs, scoring formula, thresholds, and label text before coding started. This made it easier to check whether each generated module matched the intended contract.
-
-One way the implementation diverged from the original plan was that the first version of the predictability signal under-scored very formulaic AI-style text. The system could reach `likely_human` and `uncertain`, but not `likely_ai` through `/submit`. I revised the predictability signal so repeated formulaic phrases had a stronger effect, which made all three transparency labels reachable while still keeping casual human writing low.
-
-A second change was adding a lightweight demo frontend after the backend was already complete. This did not change the API design, but it made the system easier to demonstrate and inspect during a walkthrough.
-
-A third change was replacing JSON-file audit storage with SQLite after identifying the risk of race conditions and lost audit entries with manual file writes.
-
-A fourth change was adding optional local Ollama/Qwen inference so the LLM signal can run locally on my machine instead of only through a cloud API.
-
-A fifth change was expanding testing from basic unit checks into broader API workflow tests.
-
----
-
-## Post-Submission Improvements
-
-After the initial version of the project was submitted and graded, I made several engineering improvements based on feedback and further iteration.
-
-### Before
-
-The original submitted version included:
-
-- Flask API routes for submission, appeals, logs, analytics, metadata, and verification
-- three-signal scoring pipeline
-- Groq-backed LLM signal
-- transparency labels
-- JSON-file audit storage
-- rate limiting
-- demo frontend
-- documentation and planning files
-
-This version worked for the project requirements, but some parts were still prototype-level.
-
-### After
-
-The improved version adds:
-
-1. **SQLite audit persistence**
-
-   The original audit log used JSON file storage. That was simple, but concurrent writes could cause race conditions or lost audit entries. I refactored the audit layer to use SQLite with transactional writes.
-
-2. **Local Ollama/Qwen inference**
-
-   The LLM signal now supports both Groq cloud inference and local Ollama/Qwen inference. This lets the project run the LLM-backed signal locally through my GPU setup when `LLM_PROVIDER=ollama`.
-
-3. **Frontend provider selector**
-
-   The frontend now includes a demo/admin provider selector for LLM-backed actions. This makes it easy to switch between Groq cloud inference and local Ollama/Qwen inference during demos.
-
-4. **Robust model-response parsing**
-
-   Local models often return JSON inside markdown code fences. I improved the parser so it can handle clean JSON, fenced JSON, and extra text around JSON before falling back.
-
-5. **Expanded test suite**
-
-   I added pytest coverage for core scoring logic, labels, detectors, SQLite persistence, metadata analysis, LLM provider selection, Ollama parsing behavior, and API workflows. The suite now has 50 passing tests.
-
-6. **API workflow regression tests**
-
-   The tests now cover not only individual functions but also important Flask routes and workflows, including appeals, logs, analytics, metadata submission, and creator verification.
-
-These changes make the project more reliable, easier to demo, and stronger as an engineering portfolio project.
-
----
-
-## AI Tool Usage
-
-I used AI tools as implementation support, not as a replacement for my own design decisions.
-
-### Instance 1: Flask route and first signal
-
-I prompted Codex with my `planning.md` architecture and asked it to create a small Flask skeleton with `POST /submit` and a first LLM signal function. It produced `app.py` and `detectors/llm_signal.py`.
-
-I reviewed the output and verified that:
-
-- `/submit` accepted `creator_id` and `text`
-- the response matched my API contract
-- `get_llm_signal(text: str)` returned a dictionary with `score` and `reason`
-
-I revised the LLM prompt because the first version over-scored casual human writing as AI-like. After revision, casual personal writing scored lower and matched the false-positive design better.
-
-### Instance 2: Multi-signal scoring
-
-I prompted Codex to generate `stylometric_signal.py`, `predictability_signal.py`, and `scoring.py` from my detection signals and uncertainty representation sections.
-
-I verified that:
-
-- each signal returned a `0.0–1.0` score
-- `scoring.py` used the exact `45/30/25` weights from `planning.md`
-- thresholds matched my planned ranges
-- different inputs produced different confidence scores
-
-I later revised the predictability signal because it was too weak for formulaic AI-style writing.
-
-### Instance 3: Production features and frontend
-
-I prompted Codex to add production-layer features one at a time: labels, appeals, rate limiting, analytics, creator verification, metadata support, and a simple demo frontend.
-
-I checked each feature manually by running the API locally and testing the endpoint responses. For the frontend, I tested the browser forms and revised the result display formatting so key/value outputs were readable. I did not accept the generated code blindly; I tested each endpoint and UI section before committing.
-
-### Instance 4: Post-feedback engineering improvements
-
-After receiving feedback about JSON-file persistence and missing automated tests, I used Codex to help refactor the audit log from JSON storage to SQLite and to add pytest coverage.
-
-I reviewed and tested the changes locally:
-
-```text
-50 passed in 0.55s
-```
-
-### Instance 5: Local LLM provider support
-
-I used Codex to help add optional Ollama/Qwen support to the LLM signal while preserving Groq as the default cloud provider. I also added tests for provider selection and parser robustness.
-
-I manually verified that local Ollama/Qwen worked through the same `/submit` endpoint:
-
-```json
-{
-  "llm_provider": "ollama",
-  "signal_scores": {
-    "llm": 0.6,
-    "predictability": 0.6466,
-    "stylometric": 0.4451
-  }
-}
-```
-
----
-
-## Files
+## Project Structure
 
 ```text
 app.py
@@ -1343,6 +1009,10 @@ tests/
   test_predictability_signal.py
   test_scoring.py
   test_stylometric_signal.py
+scripts/
+  benchmark_latency.py
+  run_tests.py
+  run_tests.ps1
 scoring.py
 labels.py
 audit_log.py
@@ -1356,5 +1026,90 @@ requirements.txt
 README.md
 ```
 
+---
 
+## Known Limitations
 
+This system is a prototype and should not be treated as a reliable AI detector.
+
+Specific limitations:
+
+1. **Formal human writing may be over-scored.**  
+   Academic essays, business memos, and resumes can be polished and predictable, which may raise some signal scores even when the writing is human.
+
+2. **Creative repetition can be misread.**  
+   A poem or stylistic piece that repeats simple phrases may look formulaic to the predictability signal.
+
+3. **Very short text has weak evidence.**  
+   One or two sentences may not provide enough information for stylometric or predictability metrics to be meaningful.
+
+4. **Edited AI text may become uncertain.**  
+   If a person heavily edits AI-generated text, the human variation may lower the score and move the result into the uncertain range.
+
+5. **The LLM signal is not proof.**  
+   Groq and Ollama provide judgments, not ground truth. That is why the system uses multiple signals and conservative thresholds.
+
+6. **Provider selection is for local demo/admin use.**  
+   The frontend provider selector is useful for demos, but in a real deployed system, provider configuration would likely be controlled by deployment settings or admin-only controls.
+
+7. **SQLite is lightweight, not a full production database setup.**  
+   SQLite is a good upgrade over JSON-file storage for this local prototype, but a larger deployed system would likely use PostgreSQL or another production database.
+
+If this were deployed for real users, I would add stronger calibration, human review tools, authenticated audit access, larger validation sets, stricter access controls, and clearer creator-facing explanations.
+
+---
+
+## Development Notes
+
+### Post-Feedback Improvements
+
+After the initial version of the project was submitted and graded, I made several engineering improvements:
+
+- refactored JSON-file audit storage to SQLite
+- added a Flask application factory pattern
+- initialized SQLite once at app startup
+- added isolated app instances in tests
+- added optional local Ollama/Qwen inference
+- added a frontend provider selector
+- added robust model-response parsing
+- added LLM latency instrumentation
+- added benchmarking tools for Groq vs Ollama
+- added Windows-safe test runner
+- added calibration visibility and strong AI-pattern agreement logic
+- expanded the test suite to 67 passing tests
+
+### AI Tool Usage
+
+I used AI tools as implementation support, not as a replacement for my own design decisions.
+
+Examples of AI-assisted work:
+
+- generating the first Flask route skeleton
+- drafting detector modules from my planned architecture
+- adding SQLite persistence after feedback
+- expanding pytest coverage
+- adding local Ollama/Qwen provider support
+- improving frontend display and calibration visibility
+
+I reviewed and tested the generated code locally before accepting changes. The final project behavior, thresholds, limitations, and conservative labeling approach were my design decisions.
+
+---
+
+## Rubric Coverage Summary
+
+- Content submission endpoint: `POST /submit`
+- Structured JSON response with attribution, confidence, label, and signal scores
+- Multi-signal pipeline: LLM, stylometric, and predictability signals
+- Confidence scoring with documented weights and thresholds
+- Transparency labels for likely human, uncertain, and likely AI
+- Appeals workflow through `POST /appeal`
+- Appeal status changes to `under_review`
+- Structured audit log through `GET /log`
+- Rate limiting on `POST /submit`
+- Analytics dashboard through `GET /analytics`
+- Provenance certificate through `POST /verify-creator`
+- Structured metadata support through `POST /submit-metadata`
+- Demo frontend at `GET /`
+- Optional Groq cloud inference and local Ollama/Qwen inference
+- SQLite audit persistence
+- Pytest coverage for core logic and API workflows
