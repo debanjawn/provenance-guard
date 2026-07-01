@@ -1017,7 +1017,7 @@ Test coverage includes:
 - `/verify-creator` route behavior
 - `/submit-metadata` route behavior
 
-The tests avoid real Groq and Ollama network calls by using monkeypatching and stubs.
+The tests avoid real Groq and Ollama network calls by monkeypatching provider functions with stubbed responses, so the suite can verify provider selection, parsing, fallback behavior, and latency fields without API keys, local models, or network access.
 
 ---
 
